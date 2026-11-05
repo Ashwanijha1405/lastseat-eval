@@ -1,0 +1,15 @@
+# Every package pinned exactly (direct + transitive, from pip freeze in the
+# python:3.12.16-slim-bookworm image) so every machine installs the same set.
+
+# direct
+psycopg[binary]==3.3.6
+PyYAML==6.0.3
+pytest==9.1.1
+
+# transitive
+psycopg-binary==3.3.6
+typing_extensions==4.16.0
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0

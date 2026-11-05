@@ -1,0 +1,54 @@
+name: lastseat
+
+services:
+  db:
+    image: postgres:16.15-bookworm
+    environment:
+      # Throwaway local database, not reachable from the host network.
+      POSTGRES_USER: lastseat
+      POSTGRES_PASSWORD: lastseat
+      POSTGRES_DB: lastseat
+    # deadlock_timeout: deadlocks are detected after 50ms instead of 1s.
+    # autovacuum=off: no background worker taking locks or changing plans
+    #   at unpredictable moments (determinism).
+    # fsync/synchronous_commit/full_page_writes: crash durability only; locking,
+    #   MVCC visibility and SSI behave identically. Makes resets fast.
+    command:
+      - postgres
+      - -c
+      - deadlock_timeout=50ms
+      - -c
+      - autovacuum=off
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # TCP check: the init-time temporary server listens on the socket only,
+      # so this turns healthy only once the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U lastseat -d lastseat"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  eval:
+    build: .
+    image: lastseat-eval:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: lastseat
+      PGPASSWORD: lastseat
+      PGDATABASE: lastseat
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/app
+    working_dir: /app

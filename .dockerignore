@@ -1,0 +1,13 @@
+# Keep secrets and bulky/irrelevant files out of the image build context.
+.env
+.env.*
+!.env.example
+.git
+results/
+dist/
+*.zip
+**/__pycache__
+**/*.py[cod]
+.pytest_cache/
+.venv/
+venv/
