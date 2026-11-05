@@ -94,7 +94,9 @@ class ScheduleResult:
     blocked: dict[int, dict[int, tuple[int, ...]]]  # step -> {request: blocking requests}
     outcomes: tuple[RequestOutcome, ...]
     invariants: tuple[InvariantResult, ...]
-    status: str  # "ok" | "harness_timeout" | "nondeterministic"
+    # "ok" | "model_hang" (request code ran without returning or calling db)
+    # | "harness_timeout" (stuck inside a statement) | "nondeterministic"
+    status: str
     warnings: tuple[str, ...]
     reproduced: bool | None = None
 
@@ -201,6 +203,7 @@ class _Worker:
         self.state = State.RUNNING
         self.pending = ""
         self.granted = False
+        self.in_statement = False  # granted and not yet finished
         self.step: int | None = None
         self.steps_taken = 0
         self.hit_step_limit = False
@@ -224,9 +227,11 @@ class _Worker:
             if not self.granted:
                 raise ScheduleAborted()
             self.granted = False
+            self.in_statement = True
 
     def after(self, outcome: Outcome) -> None:
         with self.run.cond:
+            self.in_statement = False
             self.run.record(self.index, self.step, outcome)
 
     def _main(self) -> None:
@@ -312,15 +317,32 @@ def _next_prefix(points: Sequence[Choice]) -> tuple[int, ...] | None:
     return None
 
 
-def _recreate_database(admin: psycopg.Connection, name: str, template: str | None = None) -> None:
+def _recreate_database(
+    admin: psycopg.Connection, name: str, template: str | None = None, owner: str | None = None
+) -> None:
     admin.execute(pgsql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(pgsql.Identifier(name)))
-    if template is None:
-        admin.execute(pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(name)))
-    else:
+    query = pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(name))
+    if template is not None:
+        query += pgsql.SQL(" TEMPLATE {} STRATEGY FILE_COPY").format(pgsql.Identifier(template))
+    if owner is not None:
+        query += pgsql.SQL(" OWNER {}").format(pgsql.Identifier(owner))
+    admin.execute(query)
+
+
+def ensure_role(role: str, conninfo: str = "") -> None:
+    """Create a non-superuser login role (password = role name) if missing.
+
+    Model code runs as this role, so it cannot change server settings such as
+    deadlock_timeout or run programs on the db host. It owns each test
+    database, so it can still create tables, constraints, triggers and
+    trusted extensions such as btree_gist.
+    """
+    with psycopg.connect(conninfo, autocommit=True) as admin:
+        if admin.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
+            return
+        admin.execute("SET scram_iterations = 1")  # fast logins; throwaway password
         admin.execute(
-            pgsql.SQL("CREATE DATABASE {} TEMPLATE {} STRATEGY FILE_COPY").format(
-                pgsql.Identifier(name), pgsql.Identifier(template)
-            )
+            pgsql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(pgsql.Identifier(role), pgsql.Literal(role))
         )
 
 
@@ -330,15 +352,17 @@ def build_template(
     *,
     seed_sql: str | None = None,
     migrate: Callable[[Db], Any] | None = None,
+    role: str | None = None,
     conninfo: str = "",
 ) -> None:
     """Create database `name`: schema, then optional migrate(db), then seed rows.
 
-    Every schedule starts from a byte-for-byte copy of it (SPEC §5.6).
+    Every schedule starts from a byte-for-byte copy of it (SPEC §5.6). With
+    `role`, the database is owned by that role and all three steps run as it.
     """
     with psycopg.connect(conninfo, autocommit=True) as admin:
-        _recreate_database(admin, name)
-    with connect(name, conninfo) as conn:
+        _recreate_database(admin, name, owner=role)
+    with connect(name, conninfo, role) as conn:
         if setup_sql.strip():
             conn.execute(setup_sql)
         if migrate is not None:
@@ -363,6 +387,7 @@ class Explorer:
         *,
         step_limit: int = 60,
         schedule_timeout_s: float = 15.0,
+        role: str | None = None,
         conninfo: str = "",
     ) -> None:
         self.template = template
@@ -371,6 +396,7 @@ class Explorer:
         self.invariants = list(invariants)
         self.step_limit = step_limit
         self.schedule_timeout_s = schedule_timeout_s
+        self.role = role  # requests connect as this role; invariants run as admin
         self.conninfo = conninfo
         # Creates/drops the per-schedule databases and doubles as the lock monitor.
         self._admin = psycopg.connect(conninfo, autocommit=True)
@@ -431,11 +457,11 @@ class Explorer:
         At the i-th choice point take `prefix[i]`; past the prefix take a
         random READY request if `rng` is given, else the lowest-numbered one.
         """
-        _recreate_database(self._admin, self.run_db, self.template)
+        _recreate_database(self._admin, self.run_db, self.template, owner=self.role)
         run = _Run(self.step_limit)
         conns: list[psycopg.Connection] = []
         try:
-            conns = [connect(self.run_db, self.conninfo) for _ in self.requests]
+            conns = [connect(self.run_db, self.conninfo, self.role) for _ in self.requests]
             workers = [_Worker(i, fn, c, run) for i, (fn, c) in enumerate(zip(self.requests, conns))]
             status, points = self._drive(run, workers, tuple(prefix), rng)
             invariants = self._check_invariants() if status == "ok" else ()
@@ -470,7 +496,9 @@ class Explorer:
         try:
             while True:
                 if not self._wait_quiescent(run, workers, deadline):
-                    status = "harness_timeout"
+                    with run.cond:
+                        spinning = any(w.state is State.RUNNING and not w.in_statement for w in workers)
+                    status = "model_hang" if spinning else "harness_timeout"
                     break
                 ready = tuple(w.index for w in workers if w.state is State.READY)
                 if not ready:

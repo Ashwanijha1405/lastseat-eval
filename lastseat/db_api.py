@@ -59,13 +59,15 @@ class _NoHooks:
         pass
 
 
-def connect(dbname: str, conninfo: str = "") -> psycopg.Connection:
+def connect(dbname: str, conninfo: str = "", role: str | None = None) -> psycopg.Connection:
     """Open a connection the way every harness connection is opened.
 
     Autocommit, because `begin()` sends an explicit BEGIN. No automatic
     server-side prepared statements, so statement 6 behaves like statement 1.
+    `role` logs in as that role (password = role name; throwaway local db).
     """
-    return psycopg.connect(conninfo, dbname=dbname, autocommit=True, prepare_threshold=None)
+    creds = {"user": role, "password": role} if role else {}
+    return psycopg.connect(conninfo, dbname=dbname, autocommit=True, prepare_threshold=None, **creds)
 
 
 class Db:

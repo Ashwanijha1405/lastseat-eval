@@ -86,3 +86,57 @@ Newest entries at the bottom.
 **Human to review**
 - The three design decisions above; whether to amend SPEC §4/§5.1 to match.
 - Trace format (examples in the M1 hand-off message).
+
+---
+
+## M2: task loader, grader, validation, t01 (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `lastseat/sandbox.py`: AST import allow-list (`forbidden_import`), guarded
+  `__import__`, builtins without `open/eval/exec/compile/input`;
+  `import psycopg` yields a view with only the exception classes.
+- `lastseat/task.py`: strict `spec.yaml` loader (unknown keys rejected),
+  per-scenario `invariants` added on top of task-wide ones.
+- `lastseat/grade.py`: solo checks (one-request run + `expect_return` +
+  `expect_sql`), scenario exploration, safety/solo/liveness scoring per
+  §6.1, up to 3 distinct counterexamples, `migrate_error`; CLI and
+  `grade_in_subprocess` (each grade in its own process).
+- `lastseat/validate.py` + `make validate`: references must pass; wrong
+  variants must fail exactly the components in their `EXPECT:` docstring
+  line; failures must reproduce; policy checks (>=2 solo checks, both
+  scenario kinds, >=2 wrong variants, `task.md` contains `setup.sql`).
+  Writes `results/validation.md` and `results/validation/<task>/<variant>/`.
+- `lastseat/prompts/contract.md` (model-facing API contract).
+- Scheduler: requests run as non-superuser role `lastseat_app` (owns each
+  test db); `model_hang` status when request code spins without calling db.
+- `tasks/t01_flash_sale/`: task.md, setup.sql, spec.yaml, reference, four
+  wrong variants (w1 lost update, w2 RR no retry, w3 check-then-decrement,
+  w4 NOWAIT), NOTES.md.
+- `tests/test_sandbox.py`, `tests/test_task.py`.
+
+**Verified by Claude**
+- `make test`: 50 passed. `make validate`: all checks passed, twice, same
+  results; every counterexample reproduces.
+- Validator bites: a wrong `EXPECT:` and a failing "reference" are both
+  reported as problems. A spinning request → `model_hang` and the process
+  exits.
+- Role probe: `lastseat_app` can `CREATE EXTENSION btree_gist`; it cannot set
+  `deadlock_timeout`, `ALTER SYSTEM`, or `COPY … TO PROGRAM`.
+
+**Decisions beyond the literal spec (human to confirm)**
+1. Per-scenario invariants (SPEC §6 example's conservation `= 5` breaks the
+   6-stock scenario).
+2. `import psycopg` allowed, bound to an exceptions-only view (spec lists
+   only `psycopg.errors`); `__future__` allowed too.
+3. `EXPECT:` line in each wrong variant, checked exactly by validate.
+4. Step-limit hits count as liveness failures in every scenario, not only
+   `must_all_succeed` ones (SPEC §5.4 "counts as liveness failure").
+5. A scenario that stops with `model_hang` scores neither safe nor live.
+
+**Human to review**
+- `lastseat/prompts/contract.md` and `tasks/t01_flash_sale/task.md`: wording
+  models will see; is every graded rule stated, and is no hazard named?
+- The four counterexamples under `results/validation/t01_flash_sale/`.
+- Open question: in safety-only scenarios a loser that *raises* (instead of
+  returning False) is not penalised, matching SPEC. Stricter option: expect
+  the multiset of returns, e.g. exactly one True and one False.
