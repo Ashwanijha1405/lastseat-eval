@@ -1,0 +1,16 @@
+scenario: two attempts with the same key, only one payment may exist
+R1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)
+R2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)
+schedule choices: [0, 0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []
+step 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]
+step 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []
+step 6   R1  COMMIT -> COMMIT
+         R1  returned 1
+step 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]
+step 8   R2  COMMIT -> COMMIT
+         R2  returned 2
+INVARIANT VIOLATED: at most one payment per idempotency key  (got [(False,)])
+reproduced on re-run: True

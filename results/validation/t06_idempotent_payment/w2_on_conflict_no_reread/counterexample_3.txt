@@ -1,0 +1,9 @@
+solo check: existing key returns the existing payment and inserts nothing
+call: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)
+schedule choices: []
+step 1   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 0 []
+step 2   R1  COMMIT   [autocommit] -> COMMIT
+         R1  returned None
+invariant ok: at most one payment per idempotency key
+INVARIANT VIOLATED: expected state: SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1001') = %(r1)s::bigint FROM payments
+  (got [(None,)])

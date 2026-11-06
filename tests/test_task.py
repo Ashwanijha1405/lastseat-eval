@@ -58,3 +58,12 @@ def test_success_sql_is_a_liveness_check(tmp_path):
                     encoding="utf-8")
     with pytest.raises(TaskSpecError, match="success_sql is only allowed"):
         load_task(task_dir)
+
+
+def test_t06_success_means_returns_and_expect_return_is_optional():
+    from lastseat.task import ANY_RETURN
+
+    t06 = load_task(TASKS_DIR / "t06_idempotent_payment")
+    assert t06.success_means == "returns"
+    assert all(c.expect_return is ANY_RETURN for c in t06.solo_checks)
+    assert load_task(TASKS_DIR / "t01_flash_sale").success_means == "returns_true"

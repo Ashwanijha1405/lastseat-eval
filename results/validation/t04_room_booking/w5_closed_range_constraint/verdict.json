@@ -52,7 +52,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.4
+      "seconds": 0.41
     },
     {
       "name": "back-to-back requests for the same room",
@@ -87,7 +87,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.54
+      "seconds": 0.59
     }
   ],
   "scores": {
@@ -98,5 +98,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 2.06
+  "seconds": 2.22
 }

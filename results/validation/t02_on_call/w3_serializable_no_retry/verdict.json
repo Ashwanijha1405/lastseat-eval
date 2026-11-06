@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.62
+      "seconds": 1.6
     },
     {
       "name": "three on call, two ask to leave",
@@ -59,7 +59,7 @@
         "scenario: three on call, two ask to leave\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=2)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 2   R1  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 1) AND on_call -> [(3,)]\nstep 3   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 4   R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 5   R2  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 2) AND on_call -> [(3,)]\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 7   R2  UPDATE doctors SET on_call = false WHERE id = 2 -> ERROR 40001 SerializationFailure: could not serialize access due to read/write dependencies among transactions\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions\ninvariant ok: every shift has at least one doctor on call\nsuccess check ok: Chen is still on call\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: three on call, two ask to leave\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=2)\nschedule choices: [0, 0, 0, 1, 1, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 2   R1  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 1) AND on_call -> [(3,)]\nstep 3   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 4   R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 5   R2  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 2) AND on_call -> [(3,)]\nstep 6   R2  UPDATE doctors SET on_call = false WHERE id = 2 -> UPDATE 1\nstep 7   R2  COMMIT -> COMMIT\n         R2  returned True\nstep 8   R1  COMMIT -> ERROR 40001 SerializationFailure: could not serialize access due to read/write dependencies among transactions\n         R1  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions\ninvariant ok: every shift has at least one doctor on call\nsuccess check ok: Chen is still on call\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.31
+      "seconds": 3.14
     },
     {
       "name": "one leaves from each of two shifts",
@@ -78,7 +78,7 @@
         "scenario: one leaves from each of two shifts\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=3)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 2   R1  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 1) AND on_call -> [(2,)]\nstep 3   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 4   R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 5   R2  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 3) AND on_call -> [(2,)]\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 7   R2  UPDATE doctors SET on_call = false WHERE id = 3 -> ERROR 40001 SerializationFailure: could not serialize access due to read/write dependencies among transactions\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions\ninvariant ok: every shift has at least one doctor on call\nsuccess check ok: Bob and Dana are still on call\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: one leaves from each of two shifts\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=3)\nschedule choices: [0, 0, 0, 1, 1, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 2   R1  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 1) AND on_call -> [(2,)]\nstep 3   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 4   R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN\nstep 5   R2  SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = 3) AND on_call -> [(2,)]\nstep 6   R2  UPDATE doctors SET on_call = false WHERE id = 3 -> UPDATE 1\nstep 7   R2  COMMIT -> COMMIT\n         R2  returned True\nstep 8   R1  COMMIT -> ERROR 40001 SerializationFailure: could not serialize access due to read/write dependencies among transactions\n         R1  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions\ninvariant ok: every shift has at least one doctor on call\nsuccess check ok: Bob and Dana are still on call\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.04
+      "seconds": 3.19
     }
   ],
   "scores": {
@@ -89,5 +89,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 8.14
+  "seconds": 8.11
 }

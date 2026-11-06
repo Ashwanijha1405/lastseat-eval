@@ -255,3 +255,35 @@ Human chose to reclassify such checks as liveness.
 - `tasks/t05_wallet_transfer/task.md` wording (rule 3 names "opposite
   directions" as a valid concurrent case without naming the hazard).
 - Scoring note: a lost transfer fails both safety and liveness.
+
+---
+
+## M3 / t06 idempotent payment + return-value checks (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t06_idempotent_payment/`: task.md, setup.sql (payments, no unique
+  constraint), spec.yaml (3 solo checks; 3 scenarios: same key safety-only,
+  same key both must get the id, different keys), reference (`migrate()`
+  adds `UNIQUE`, `ON CONFLICT DO NOTHING RETURNING id`, then a separate
+  re-read), four wrong variants (w1 select-then-insert, w2 no re-read,
+  w3 everything in REPEATABLE READ, w4 unhandled `UniqueViolation`), NOTES.md.
+- Grader extension (needed for SPEC §7 "both return the same payment id"):
+  - task key `success_means: returns_true | returns` (default
+    `returns_true`, so t01–t05 are unchanged);
+  - checks may bind return values as `%(r1)s`, `%(r2)s` (NULL if raised);
+  - solo `expect_return` optional when `expect_sql` is present.
+- Test for the new loader fields.
+
+**Verified by Claude**
+- `make validate` (all six tasks) green; `make test` 52 passed.
+- w3 prediction confirmed: `40001 … due to concurrent update` at the INSERT
+  under REPEATABLE READ; SERIALIZABLE checked ad hoc, same error.
+- Alternative reference (catch `UniqueViolation`, re-read) passes.
+- w1 EXPECT corrected from `safety` to `safety, liveness` after the harness
+  showed it returns ids 1 and 2 for one key. Grader unchanged.
+
+**Human to review**
+- The grader extension above (new capability; earlier verdicts identical).
+- `tasks/t06_idempotent_payment/task.md`, especially "must return the id as
+  an int (never None) and must not raise".
+- w1's corrected EXPECT.

@@ -1,0 +1,91 @@
+{
+  "task_id": "t06_idempotent_payment",
+  "solution": "/app/tasks/t06_idempotent_payment/wrong/w1_select_then_insert.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "new key creates a payment and returns its id",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: new key creates a payment and returns its id\ncall: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned 1\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 1 AND bool_and(id = %(r1)s::bigint AND idempotency_key = 'order-1001'\n                                 AND customer_id = 7 AND amount = 2500)\nFROM payments\n\n"
+    },
+    {
+      "name": "existing key returns the existing payment and inserts nothing",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: existing key returns the existing payment and inserts nothing\ncall: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> [(2,)]\nstep 3   R1  COMMIT -> COMMIT\n         R1  returned 2\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1001') = %(r1)s::bigint FROM payments\n\n"
+    },
+    {
+      "name": "a different key creates a separate payment",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: a different key creates a separate payment\ncall: create_payment(db, idempotency_key='order-1002', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1002' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1002', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned 2\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1002') = %(r1)s::bigint FROM payments\n\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two attempts with the same key, only one payment may exist",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 70,
+      "dfs_schedules": 70,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 60,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two attempts with the same key, only one payment may exist\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned 1\nstep 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned 2\nINVARIANT VIOLATED: at most one payment per idempotency key  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 2.95
+    },
+    {
+      "name": "two attempts with the same key both get the payment id",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 70,
+      "dfs_schedules": 70,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": false,
+      "unsafe_schedules": 60,
+      "unlive_schedules": 60,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned 1\nstep 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned 2\nINVARIANT VIOLATED: at most one payment per idempotency key  (got [(False,)])\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 3.1
+    },
+    {
+      "name": "two different keys at the same moment",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 70,
+      "dfs_schedules": 70,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.7
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.25,
+    "liveness": 0.0,
+    "total": 0.25
+  },
+  "passed": false,
+  "reproducible": true,
+  "seconds": 7.93
+}

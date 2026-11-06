@@ -1,0 +1,61 @@
+id: t06_idempotent_payment
+title: Payment creation with an idempotency key
+entrypoint: create_payment
+signature: "create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int"
+success_means: returns            # success = returns without raising; success_sql checks the id
+
+invariants:
+  - name: at most one payment per idempotency key
+    sql: SELECT count(*) = count(DISTINCT idempotency_key) FROM payments
+
+# Checks may use %(r1)s, %(r2)s: the value request 1, 2 returned (NULL if it raised).
+solo_checks:
+  - name: new key creates a payment and returns its id
+    call: {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+    expect_sql: >
+      SELECT count(*) = 1 AND bool_and(id = %(r1)s::bigint AND idempotency_key = 'order-1001'
+                                       AND customer_id = 7 AND amount = 2500)
+      FROM payments
+  - name: existing key returns the existing payment and inserts nothing
+    seed_sql: |
+      INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-0999', 3, 100), ('order-1001', 7, 2500);
+    call: {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+    expect_sql: >
+      SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1001') = %(r1)s::bigint
+      FROM payments
+  - name: a different key creates a separate payment
+    seed_sql: |
+      INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500);
+    call: {idempotency_key: order-1002, customer_id: 7, amount: 2500}
+    expect_sql: >
+      SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1002') = %(r1)s::bigint
+      FROM payments
+
+concurrent_scenarios:
+  - name: two attempts with the same key, only one payment may exist
+    requests:
+      - {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+      - {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+    must_all_succeed: false
+  - name: two attempts with the same key both get the payment id
+    requests:
+      - {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+      - {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+    must_all_succeed: true
+    success_sql:
+      - name: one payment exists and both attempts returned its id
+        sql: >
+          SELECT count(*) = 1 AND bool_and(id = %(r1)s::bigint) AND %(r1)s::bigint = %(r2)s::bigint
+          FROM payments
+  - name: two different keys at the same moment
+    requests:
+      - {idempotency_key: order-1001, customer_id: 7, amount: 2500}
+      - {idempotency_key: order-1002, customer_id: 8, amount: 900}
+    must_all_succeed: true
+    success_sql:
+      - name: two payments exist and each attempt returned its own
+        sql: >
+          SELECT count(*) = 2
+             AND (SELECT id FROM payments WHERE idempotency_key = 'order-1001') = %(r1)s::bigint
+             AND (SELECT id FROM payments WHERE idempotency_key = 'order-1002') = %(r2)s::bigint
+          FROM payments

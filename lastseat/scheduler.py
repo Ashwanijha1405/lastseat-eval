@@ -473,7 +473,7 @@ class Explorer:
             conns = [connect(self.run_db, self.conninfo, self.role) for _ in self.requests]
             workers = [_Worker(i, fn, c, run) for i, (fn, c) in enumerate(zip(self.requests, conns))]
             status, points = self._drive(run, workers, tuple(prefix), rng)
-            invariants = self._check_invariants() if status == "ok" else ()
+            invariants = self._check_invariants(workers) if status == "ok" else ()
         finally:
             for c in conns:
                 c.close()
@@ -599,14 +599,24 @@ class Explorer:
                 except psycopg.Error:
                     pass
 
-    def _check_invariants(self) -> list[InvariantResult]:
+    def _check_invariants(self, workers: list[_Worker]) -> list[InvariantResult]:
+        """Run each check on a fresh connection. A check whose SQL mentions
+        `%(r1)s`, `%(r2)s`, … gets request i's return value bound there
+        (NULL if it did not return), so checks can compare returns to state."""
+        returned = {
+            f"r{w.index + 1}": w.outcome.value if w.outcome and w.outcome.kind == "returned" else None
+            for w in workers
+        }
         results = []
         with connect(self.run_db, self.conninfo) as conn:
             for inv in self.invariants:
+                params = returned if "%(r" in inv.sql else None
                 try:
-                    rows = conn.execute(inv.sql).fetchall()
+                    rows = conn.execute(inv.sql, params).fetchall()
                     results.append(InvariantResult(inv.name, rows == [(True,)], repr(rows), inv.kind))
                 except psycopg.Error as e:
                     got = f"ERROR {e.sqlstate}: {e.diag.message_primary}"
                     results.append(InvariantResult(inv.name, False, got, inv.kind))
+                except Exception as e:  # a return value psycopg cannot send as a parameter
+                    results.append(InvariantResult(inv.name, False, f"ERROR {type(e).__name__}: {e}", inv.kind))
         return results

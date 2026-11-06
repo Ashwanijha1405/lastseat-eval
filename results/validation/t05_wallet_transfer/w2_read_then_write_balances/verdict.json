@@ -48,7 +48,7 @@
       "counterexamples": [
         "scenario: two transfers out of one account, only one fits\nR1: transfer(db, from_id=1, to_id=2, amount=40)\nR2: transfer(db, from_id=1, to_id=3, amount=40)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 40 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  SELECT balance FROM accounts WHERE id = 3 -> [(0,)]\nstep 10  R2  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 40 WHERE id = 3 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\nINVARIANT VIOLATED: money is conserved (total 50)  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 18.24
+      "seconds": 18.02
     },
     {
       "name": "opposite transfers between two accounts",
@@ -68,7 +68,7 @@
         "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 130 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 8   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 9   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 10  R2  UPDATE accounts SET balance = 80 WHERE id = 2 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 120 WHERE id = 1 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nreproduced on re-run: True\n",
         "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 0, 0, 1, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 8   R2  UPDATE accounts SET balance = 80 WHERE id = 2 -> UPDATE 1\nstep 9   R1  UPDATE accounts SET balance = 130 WHERE id = 2 -> blocked (waiting for R2)\nstep 10  R2  UPDATE accounts SET balance = 120 WHERE id = 1 -> UPDATE 1\n         R1  step 9 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised DeadlockDetected (40P01): deadlock detected\nstep 11  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
       ],
-      "seconds": 38.64
+      "seconds": 37.22
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -86,7 +86,7 @@
       "counterexamples": [
         "scenario: two transfers out of one account, both fit\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=1, to_id=3, amount=30)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 30 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  SELECT balance FROM accounts WHERE id = 3 -> [(0,)]\nstep 10  R2  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 30 WHERE id = 3 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\nINVARIANT VIOLATED: money is conserved (total 100)  (got [(False,)])\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 18.66
+      "seconds": 18.23
     }
   ],
   "scores": {
@@ -97,5 +97,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 75.79
+  "seconds": 73.76
 }

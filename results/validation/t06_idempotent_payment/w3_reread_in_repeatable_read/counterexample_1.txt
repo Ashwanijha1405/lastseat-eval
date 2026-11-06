@@ -1,0 +1,17 @@
+scenario: two attempts with the same key both get the payment id
+R1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)
+R2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)
+schedule choices: [0, 0, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 2   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> INSERT 0 1 [(1,)]
+step 3   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 4   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> blocked (waiting for R1)
+step 5   R1  COMMIT -> COMMIT
+         R1  returned 1
+         R2  step 4 resumed -> ERROR 40001 SerializationFailure: could not serialize access due to concurrent update
+         R2  function ended inside an open transaction; harness rolled it back
+         R2  raised SerializationFailure (40001): could not serialize access due to concurrent update
+invariant ok: at most one payment per idempotency key
+SUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])
+warning: R2: function ended inside an open transaction; harness rolled it back
+reproduced on re-run: True

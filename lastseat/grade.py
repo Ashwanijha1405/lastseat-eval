@@ -29,7 +29,7 @@ from .scheduler import (
     drop_database,
     ensure_role,
 )
-from .task import Scenario, SoloCheck, Task, load_task
+from .task import ANY_RETURN, Scenario, SoloCheck, Task, load_task
 
 APP_ROLE = "lastseat_app"
 MAX_COUNTEREXAMPLES = 3
@@ -157,7 +157,7 @@ def _solo(task: Task, solution: Solution, check: SoloCheck, name: str, conninfo:
         reasons.append(r.status)
     elif outcome.kind != "returned":
         reasons.append(outcome.text)
-    elif not _same_value(outcome.value, check.expect_return):
+    elif check.expect_return is not ANY_RETURN and not _same_value(outcome.value, check.expect_return):
         reasons.append(f"returned {outcome.value!r}, expected {check.expect_return!r}")
     reasons += [f"violated: {i.name} (got {i.got})" for i in r.invariants if not i.holds]
     header = f"solo check: {check.name}\ncall: {_signature(task, check.call)}\n"
@@ -179,8 +179,10 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
             return True
         if not sc.must_all_succeed:
             return False
-        all_true = all(o.kind == "returned" and o.value is True for o in r.outcomes)
-        return not all_true or not r.success_holds
+        succeeded = all(
+            o.kind == "returned" and (task.success_means == "returns" or o.value is True) for o in r.outcomes
+        )
+        return not succeeded or not r.success_holds
 
     _build(task, solution, name, sc.seed_sql, conninfo)
     requests = [_call(solution, kwargs) for kwargs in sc.requests]

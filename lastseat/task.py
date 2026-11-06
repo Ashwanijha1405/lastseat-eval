@@ -21,13 +21,26 @@ class TaskSpecError(Exception):
     pass
 
 
+class _AnyReturn:
+    def __repr__(self) -> str:
+        return "<any return value>"
+
+
+# expect_return omitted: any value counts, as long as the call returns
+# (no exception) and expect_sql holds.
+ANY_RETURN = _AnyReturn()
+
+# What counts as a successful request in a must_all_succeed scenario.
+SUCCESS_MEANS = ("returns_true", "returns")
+
+
 @dataclass(frozen=True)
 class SoloCheck:
     name: str
     seed_sql: str
     call: dict[str, Any]
-    expect_return: Any
-    expect_sql: str | None
+    expect_return: Any  # or ANY_RETURN
+    expect_sql: str | None  # may use %(r1)s for the returned value
 
 
 @dataclass(frozen=True)
@@ -50,6 +63,7 @@ class Task:
     directory: Path
     setup_sql: str
     prompt: str
+    success_means: str  # one of SUCCESS_MEANS
     invariants: tuple[Invariant, ...]
     solo_checks: tuple[SoloCheck, ...]
     scenarios: tuple[Scenario, ...]
@@ -76,20 +90,25 @@ def load_task(directory: Path | str) -> Task:
     if task_id != directory.name:
         raise TaskSpecError(f"{where}: id {task_id!r} does not match directory {directory.name!r}")
     default_seed = spec.opt("seed_state_sql", str, "")
+    success_means = spec.opt("success_means", str, "returns_true")
+    if success_means not in SUCCESS_MEANS:
+        raise TaskSpecError(f"{where}: success_means must be one of {SUCCESS_MEANS}, got {success_means!r}")
     invariants = tuple(_invariant(i, f"{where}: invariants[{n}]") for n, i in enumerate(spec.opt("invariants", list, [])))
 
     solo = []
     for n, raw_check in enumerate(spec.req("solo_checks", list)):
-        f = _Fields(raw_check, f"{where}: solo_checks[{n}]")
-        solo.append(
-            SoloCheck(
-                name=f.req("name", str),
-                seed_sql=f.opt("seed_sql", str, default_seed),
-                call=f.req("call", dict),
-                expect_return=f.req("expect_return", object),
-                expect_sql=f.opt("expect_sql", str, None),
-            )
+        ctx = f"{where}: solo_checks[{n}]"
+        f = _Fields(raw_check, ctx)
+        check = SoloCheck(
+            name=f.req("name", str),
+            seed_sql=f.opt("seed_sql", str, default_seed),
+            call=f.req("call", dict),
+            expect_return=f.opt("expect_return", object, ANY_RETURN),
+            expect_sql=f.opt("expect_sql", str, None),
         )
+        if check.expect_return is ANY_RETURN and not check.expect_sql:
+            raise TaskSpecError(f"{ctx}: needs expect_return, expect_sql, or both")
+        solo.append(check)
         f.done()
 
     scenarios = []
@@ -126,6 +145,7 @@ def load_task(directory: Path | str) -> Task:
         directory=directory,
         setup_sql=(directory / "setup.sql").read_text(encoding="utf-8"),
         prompt=(directory / "task.md").read_text(encoding="utf-8"),
+        success_means=success_means,
         invariants=invariants,
         solo_checks=tuple(solo),
         scenarios=tuple(scenarios),

@@ -54,7 +54,7 @@
       "counterexamples": [
         "scenario: two overlapping requests for the same room\nR1: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 30, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz -> []\nstep 3   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 4   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 5   R2  SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:30:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:30:00+00:00'::timestamptz -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 7   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:30:00+00:00'::timestamptz, '2026-11-09 11:30:00+00:00'::timestamptz) -> INSERT 0 1\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no two bookings of the same room overlap  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.05
+      "seconds": 3.08
     },
     {
       "name": "back-to-back requests for the same room",
@@ -86,7 +86,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.74
+      "seconds": 1.66
     }
   ],
   "scores": {
@@ -97,5 +97,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 6.72
+  "seconds": 6.69
 }
