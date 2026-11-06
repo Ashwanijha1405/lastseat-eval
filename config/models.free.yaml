@@ -7,7 +7,7 @@
 #   5. if any reply still reports cost > 0, the run stops at once
 # List every free model with: make free-models  (or .\run.ps1 free-models)
 tier: free
-confirmed: false
+confirmed: true
 
 # OpenRouter free-model limits for an account that never bought >= $10 credits:
 # 20 requests/minute, 50/day (UTC). Every HTTP attempt, retries included, is

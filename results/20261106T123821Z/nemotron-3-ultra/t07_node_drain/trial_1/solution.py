@@ -1,0 +1,72 @@
+import psycopg.errors
+
+def drain_node(db, node_id: str) -> bool:
+    """
+    Attempt to drain a storage node by deactivating all its replicas.
+    Returns True if successful, False if draining would leave a shard without any active replica.
+    """
+    max_attempts = 10
+    for _ in range(max_attempts):
+        try:
+            db.begin("read committed")
+
+            # Lock all active replicas of shards where this node has an active replica.
+            # The ORDER BY ensures a consistent locking order to avoid deadlocks.
+            db.execute("""
+                WITH target_shards AS (
+                    SELECT shard_id
+                    FROM replicas
+                    WHERE node_id = %(node_id)s AND active = true
+                )
+                SELECT 1
+                FROM replicas r
+                JOIN target_shards ts ON r.shard_id = ts.shard_id
+                WHERE r.active = true
+                FOR UPDATE OF r ORDER BY r.shard_id, r.node_id
+            """, {"node_id": node_id})
+
+            # Check whether every such shard has at least one other active replica.
+            rows = db.execute("""
+                WITH target_shards AS (
+                    SELECT shard_id
+                    FROM replicas
+                    WHERE node_id = %(node_id)s AND active = true
+                )
+                SELECT 1
+                FROM replicas r
+                JOIN target_shards ts ON r.shard_id = ts.shard_id
+                WHERE r.active = true
+                GROUP BY r.shard_id
+                HAVING COUNT(CASE WHEN r.node_id != %(node_id)s THEN 1 END) = 0
+                LIMIT 1
+            """, {"node_id": node_id})
+
+            if rows:
+                db.rollback()
+                return False
+
+            # Deactivate all replicas on this node.
+            db.execute("""
+                UPDATE replicas
+                SET active = false
+                WHERE node_id = %(node_id)s AND active = true
+            """, {"node_id": node_id})
+
+            db.commit()
+            return True
+
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+
+    # In practice, retries should almost always succeed. If not, we treat it as a failure
+    # to avoid raising an exception (which would count as a failure per the rules).
+    return False
+
+
+def migrate(db) -> None:
+    # No schema changes required for the basic solution.
+    pass

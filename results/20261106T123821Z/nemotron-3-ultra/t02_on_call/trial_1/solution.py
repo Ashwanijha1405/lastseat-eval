@@ -1,0 +1,32 @@
+import psycopg.errors
+
+def go_off_call(db, doctor_id: int) -> bool:
+    db.begin()
+    try:
+        # Lock the shift row for this doctor's shift to serialize concurrent requests for the same shift.
+        db.execute(
+            "SELECT s.id FROM shifts s JOIN doctors d ON d.shift_id = s.id WHERE d.id = %s FOR UPDATE",
+            (doctor_id,)
+        )
+        # Count how many doctors in this shift are currently on call.
+        rows = db.execute(
+            "SELECT count(*) FROM doctors WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = %s) AND on_call = true",
+            (doctor_id,)
+        )
+        count = rows[0][0]
+        if count >= 2:
+            db.execute(
+                "UPDATE doctors SET on_call = false WHERE id = %s",
+                (doctor_id,)
+            )
+            db.commit()
+            return True
+        else:
+            db.commit()
+            return False
+    except Exception:
+        db.rollback()
+        raise
+
+def migrate(db):
+    pass

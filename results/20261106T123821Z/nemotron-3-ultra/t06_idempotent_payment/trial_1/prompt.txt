@@ -1,0 +1,80 @@
+# Environment and rules
+
+You are writing one Python function for a backend service backed by **PostgreSQL 16**. Your code is tested automatically against a real PostgreSQL 16 server.
+
+## How your function is called
+
+- Your function receives a `db` object as its first argument. Each call to your function is one incoming request with its **own database connection**.
+- **Several requests call your function at the same time**, each on its own connection, and their statements may be interleaved in any order the database allows. The task's rules must hold however that happens.
+- **Valid requests must succeed even when they arrive at the same moment.** If a set of requests would all succeed when run one after another, they must all succeed when they run concurrently. Raising an exception, or refusing a request only because another request was in progress at the same time, counts as a failure.
+- When the task says to refuse a request, return the value the task specifies. Do not raise.
+
+## The `db` object
+
+```python
+db.begin(isolation: str = "read committed")  # "read committed" | "repeatable read" | "serializable"
+db.execute(sql: str, params: dict | tuple | None = None) -> list[tuple]  # all result rows; [] if none
+db.commit()
+db.rollback()
+```
+
+- Placeholders use psycopg style: `%(name)s` with a dict, or `%s` with a tuple.
+- **One SQL statement per `execute` call.** A string containing several statements separated by `;` is rejected with an error.
+- Outside `db.begin()` … `db.commit()`/`db.rollback()`, each `execute` runs and commits on its own.
+- Database errors are raised as `psycopg.errors.*` exceptions, for example `SerializationFailure` (SQLSTATE 40001), `DeadlockDetected` (40P01), `UniqueViolation`, `ExclusionViolation`, `LockNotAvailable`. You may catch them, roll back, and retry. After an error inside a transaction, call `db.rollback()` before running anything else on that connection.
+- If your function returns while a transaction is still open, the open transaction is rolled back and its changes are lost.
+- Each request may make at most **60** `db` calls (`begin`, `execute`, `commit`, `rollback` each count as one). A request that exceeds this fails. Keep any retry loop bounded.
+- Do not sleep or wait between retries; just retry.
+
+## Optional schema migration
+
+You may also define:
+
+```python
+def migrate(db) -> None: ...
+```
+
+It runs once, alone, on an empty database after the schema below has been created and before any data is inserted. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
+
+## What you may import
+
+Only: `psycopg.errors` (as `import psycopg`, `import psycopg.errors`, `from psycopg import errors`, or `from psycopg.errors import ...`; only the exception classes are available), `datetime`, `decimal`, `typing`, and `__future__`. Any other import makes the whole solution invalid. Do not open your own database connections, start threads, or use the network or files.
+
+## Answer format
+
+Reply with the complete Python module in a single fenced code block (three backticks followed by `python`). It must define the function named in the task, and optionally `migrate`. Only the last `python` code block in your reply is used.
+
+---
+
+# Task: payment creation with idempotency keys
+
+Our checkout page creates a payment when the customer presses "Pay". Mobile networks are unreliable: the app retries a request when it does not get a response in time, and customers double-click. To make retries safe, the app generates one idempotency key per checkout and sends the same key with every attempt. Two attempts with the same key can reach our servers at the same moment.
+
+Write the function that creates the payment:
+
+```python
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int: ...
+```
+
+The schema already exists:
+
+```sql
+CREATE TABLE payments (
+    id              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key text NOT NULL,
+    customer_id     int NOT NULL,
+    amount          int NOT NULL CHECK (amount > 0)
+);
+```
+
+## Behaviour
+
+- If no payment with this `idempotency_key` exists yet: insert one row into `payments` with this `idempotency_key`, `customer_id` and `amount`, and return its `id`.
+- If a payment with this `idempotency_key` already exists: insert nothing and return the `id` of the existing payment.
+- Every attempt with the same key carries the same `customer_id` and `amount`. `amount` is a positive integer.
+- The function must return the payment's `id` as an `int` (never `None`) and must not raise.
+
+## Rules that must always hold, however many attempts run at the same time
+
+1. There is never more than one payment with the same `idempotency_key`.
+2. Every attempt succeeds: when several attempts with the same key arrive at the same moment, each of them returns the `id` of the one payment stored for that key. Attempts with different keys each create and return their own payment.

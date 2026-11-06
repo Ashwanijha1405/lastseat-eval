@@ -1,0 +1,11 @@
+{
+  "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "provider": "Nvidia",
+  "finish_reason": "stop",
+  "prompt_tokens": 1138,
+  "completion_tokens": 5700,
+  "cost_usd": 0.0,
+  "seconds": 184.32,
+  "attempts": 1
+}

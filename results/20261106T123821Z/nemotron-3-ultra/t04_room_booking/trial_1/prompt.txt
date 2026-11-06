@@ -1,0 +1,89 @@
+# Environment and rules
+
+You are writing one Python function for a backend service backed by **PostgreSQL 16**. Your code is tested automatically against a real PostgreSQL 16 server.
+
+## How your function is called
+
+- Your function receives a `db` object as its first argument. Each call to your function is one incoming request with its **own database connection**.
+- **Several requests call your function at the same time**, each on its own connection, and their statements may be interleaved in any order the database allows. The task's rules must hold however that happens.
+- **Valid requests must succeed even when they arrive at the same moment.** If a set of requests would all succeed when run one after another, they must all succeed when they run concurrently. Raising an exception, or refusing a request only because another request was in progress at the same time, counts as a failure.
+- When the task says to refuse a request, return the value the task specifies. Do not raise.
+
+## The `db` object
+
+```python
+db.begin(isolation: str = "read committed")  # "read committed" | "repeatable read" | "serializable"
+db.execute(sql: str, params: dict | tuple | None = None) -> list[tuple]  # all result rows; [] if none
+db.commit()
+db.rollback()
+```
+
+- Placeholders use psycopg style: `%(name)s` with a dict, or `%s` with a tuple.
+- **One SQL statement per `execute` call.** A string containing several statements separated by `;` is rejected with an error.
+- Outside `db.begin()` … `db.commit()`/`db.rollback()`, each `execute` runs and commits on its own.
+- Database errors are raised as `psycopg.errors.*` exceptions, for example `SerializationFailure` (SQLSTATE 40001), `DeadlockDetected` (40P01), `UniqueViolation`, `ExclusionViolation`, `LockNotAvailable`. You may catch them, roll back, and retry. After an error inside a transaction, call `db.rollback()` before running anything else on that connection.
+- If your function returns while a transaction is still open, the open transaction is rolled back and its changes are lost.
+- Each request may make at most **60** `db` calls (`begin`, `execute`, `commit`, `rollback` each count as one). A request that exceeds this fails. Keep any retry loop bounded.
+- Do not sleep or wait between retries; just retry.
+
+## Optional schema migration
+
+You may also define:
+
+```python
+def migrate(db) -> None: ...
+```
+
+It runs once, alone, on an empty database after the schema below has been created and before any data is inserted. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
+
+## What you may import
+
+Only: `psycopg.errors` (as `import psycopg`, `import psycopg.errors`, `from psycopg import errors`, or `from psycopg.errors import ...`; only the exception classes are available), `datetime`, `decimal`, `typing`, and `__future__`. Any other import makes the whole solution invalid. Do not open your own database connections, start threads, or use the network or files.
+
+## Answer format
+
+Reply with the complete Python module in a single fenced code block (three backticks followed by `python`). It must define the function named in the task, and optionally `migrate`. Only the last `python` code block in your reply is used.
+
+---
+
+# Task: meeting-room booking
+
+Our office app lets employees book meeting rooms. Popular rooms are booked the moment the day's calendar opens, so several people often try to book the same room for similar times at about the same moment.
+
+Write the function the app calls when someone presses "Book":
+
+```python
+from datetime import datetime
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool: ...
+```
+
+The schema already exists:
+
+```sql
+CREATE TABLE rooms (
+    id   int PRIMARY KEY,
+    name text NOT NULL
+);
+
+CREATE TABLE bookings (
+    id        int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    room_id   int NOT NULL REFERENCES rooms (id),
+    starts_at timestamptz NOT NULL,
+    ends_at   timestamptz NOT NULL,
+    CHECK (starts_at < ends_at)
+);
+```
+
+A booking occupies its room from `starts_at` up to, but not including, `ends_at`. So a booking from 10:00 to 11:00 and another from 11:00 to 12:00 do not overlap and may both exist; 10:00 to 11:00 and 10:30 to 11:30 do overlap.
+
+## Behaviour
+
+- If the room has no existing booking that overlaps the requested time: insert exactly one row into `bookings` with this `room_id`, `starts_at` and `ends_at`, and return `True`.
+- Otherwise: return `False` and change nothing.
+- The room always exists. `starts_at` and `ends_at` are timezone-aware `datetime` values with `starts_at < ends_at`.
+
+## Rules that must always hold, however many requests run at the same time
+
+1. No two bookings of the same room overlap.
+2. Bookings that fit must succeed: if a set of booking requests would all succeed when run one after another, each of them must return `True` when they arrive at the same moment.

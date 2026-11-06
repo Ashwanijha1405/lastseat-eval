@@ -1,0 +1,118 @@
+{
+  "run_id": "20261106T123821Z",
+  "signature": {
+    "config": "config/models.free.yaml",
+    "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "google/gemma-4-31b-it:free"
+    ],
+    "tasks": [
+      "t01_flash_sale",
+      "t02_on_call",
+      "t03_expense_budget",
+      "t04_room_booking",
+      "t05_wallet_transfer",
+      "t06_idempotent_payment",
+      "t07_node_drain"
+    ],
+    "trials": 1,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-06T12:38:21+00:00",
+  "git_commit": "60f8d7fb8ffb788507de6dacc87b68f88cd02bd0",
+  "dry_run": false,
+  "trials": 1,
+  "config": "config/models.free.yaml",
+  "tier": "free",
+  "limits": {
+    "min_interval_s": 4,
+    "daily_requests": 50,
+    "max_attempts": 4
+  },
+  "tasks": [
+    "t01_flash_sale",
+    "t02_on_call",
+    "t03_expense_budget",
+    "t04_room_booking",
+    "t05_wallet_transfer",
+    "t06_idempotent_payment",
+    "t07_node_drain"
+  ],
+  "models": [
+    {
+      "slug": "nemotron-3-ultra",
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:free"
+    },
+    {
+      "slug": "gemma-4-31b",
+      "id": "google/gemma-4-31b-it:free"
+    }
+  ],
+  "settings_sent": {
+    "max_tokens": 32000,
+    "reasoning": {
+      "effort": "high"
+    },
+    "provider": {
+      "max_price": {
+        "prompt": 0,
+        "completion": 0,
+        "request": 0,
+        "image": 0
+      }
+    }
+  },
+  "list_prices_usd_per_token": {
+    "nvidia/nemotron-3-ultra-550b-a55b:free": [
+      0.0,
+      0.0
+    ],
+    "google/gemma-4-31b-it:free": [
+      0.0,
+      0.0
+    ]
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "grading_jobs": 2,
+  "budget_limit_usd": 0.0,
+  "complete": false,
+  "sessions": [
+    {
+      "started_utc": "2026-11-06T12:38:21+00:00",
+      "git_commit": "60f8d7fb8ffb788507de6dacc87b68f88cd02bd0",
+      "api_calls": 3,
+      "stopped_reason": null,
+      "api_failures": []
+    },
+    {
+      "started_utc": "2026-11-06T13:00:43+00:00",
+      "git_commit": "60f8d7fb8ffb788507de6dacc87b68f88cd02bd0",
+      "api_calls": 4,
+      "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i",
+      "api_failures": [
+        "gemma-4-31b/t01_flash_sale/trial_1: rate_limited: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
+      ],
+      "finished_utc": "2026-11-06T13:30:13+00:00"
+    },
+    {
+      "started_utc": "2026-11-06T17:07:09+00:00",
+      "git_commit": "60f8d7fb8ffb788507de6dacc87b68f88cd02bd0",
+      "api_calls": 0,
+      "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i",
+      "api_failures": [
+        "gemma-4-31b/t01_flash_sale/trial_1: rate_limited: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
+      ],
+      "finished_utc": "2026-11-06T17:07:41+00:00"
+    }
+  ],
+  "spent_usd": 0.0,
+  "api_calls": 7,
+  "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
+}

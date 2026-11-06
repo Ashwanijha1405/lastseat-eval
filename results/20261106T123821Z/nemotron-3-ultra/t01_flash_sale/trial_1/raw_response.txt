@@ -1,0 +1,25 @@
+```python
+def purchase(db, product_id: int, qty: int) -> bool:
+    db.begin()
+    try:
+        # Try to reserve stock atomically.
+        rows = db.execute(
+            "UPDATE products SET stock = stock - %s WHERE id = %s AND stock >= %s RETURNING id",
+            (qty, product_id, qty)
+        )
+        if rows:
+            # Stock was sufficient; record the order.
+            db.execute(
+                "INSERT INTO orders (product_id, qty) VALUES (%s, %s)",
+                (product_id, qty)
+            )
+            db.commit()
+            return True
+        else:
+            # Not enough stock.
+            db.rollback()
+            return False
+    except Exception:
+        db.rollback()
+        raise
+```

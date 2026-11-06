@@ -1,0 +1,28 @@
+def migrate(db):
+    # Add a unique constraint on idempotency_key to enforce rule #1 at the database level.
+    db.execute(
+        "ALTER TABLE payments ADD CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key)"
+    )
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    # Try to insert a new payment. If the idempotency_key already exists, do nothing and return no row.
+    rows = db.execute(
+        "INSERT INTO payments (idempotency_key, customer_id, amount) "
+        "VALUES (%(key)s, %(customer)s, %(amount)s) "
+        "ON CONFLICT (idempotency_key) DO NOTHING "
+        "RETURNING id",
+        {"key": idempotency_key, "customer": customer_id, "amount": amount},
+    )
+    if rows:
+        # Insert succeeded – return the newly generated id.
+        return rows[0][0]
+
+    # Insert did nothing because a row with the same key already exists and is committed.
+    # Fetch that existing id.
+    rows = db.execute(
+        "SELECT id FROM payments WHERE idempotency_key = %(key)s",
+        {"key": idempotency_key},
+    )
+    # The unique constraint guarantees exactly one row exists.
+    return rows[0][0]

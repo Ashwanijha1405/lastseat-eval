@@ -1,0 +1,26 @@
+```python
+import psycopg.errors
+from datetime import datetime
+
+def migrate(db) -> None:
+    # Enable GiST support for integer equality (room_id) in the exclusion constraint
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # Prevent overlapping bookings for the same room
+    db.execute(
+        "ALTER TABLE bookings "
+        "ADD CONSTRAINT no_overlapping_bookings "
+        "EXCLUDE USING GIST (room_id WITH =, tsrange(starts_at, ends_at) WITH &&)"
+    )
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    try:
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at)
+        )
+        return True
+    except psycopg.errors.ExclusionViolation:
+        # The insert failed because of an overlap; clean up the aborted transaction
+        db.rollback()
+        return False
+```

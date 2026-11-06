@@ -1,0 +1,15 @@
+scenario: two drains of nodes sharing several shards, both fit
+R1: drain_node(db, node_id='A')
+R2: drain_node(db, node_id='B')
+schedule choices: [0, 0, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near "ORDER"
+step 3   R1  ROLLBACK -> ROLLBACK
+         R1  raised SyntaxError (42601): syntax error at or near "ORDER"
+step 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 5   R2  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near "ORDER"
+step 6   R2  ROLLBACK -> ROLLBACK
+         R2  raised SyntaxError (42601): syntax error at or near "ORDER"
+invariant ok: every shard has at least one active replica
+SUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])
+reproduced on re-run: True
