@@ -43,7 +43,13 @@ DEFAULT_CONFIG = "free"
 # Sent as provider.max_price on every free-tier request: OpenRouter refuses to
 # route the request to any provider that charges more than this.
 FREE_MAX_PRICE = {"prompt": 0, "completion": 0, "request": 0, "image": 0}
+# OpenRouter free models, account with < $10 credits ever bought: 20/min, 50/day.
+FREE_LIMITS = {"min_interval_s": 4.0, "daily_requests": 50, "max_attempts": 4}
 RESULTS = ROOT / "results"
+
+
+def quota_file() -> Path:
+    return RESULTS / ".free_quota.json"
 API = "https://openrouter.ai/api/v1"
 
 # Grader caps, recorded in run_meta.json (defaults of lastseat.grade / scheduler).
@@ -71,6 +77,7 @@ class ModelsConfig:
     confirmed: bool
     settings: dict[str, Any]
     models: tuple[Model, ...]
+    limits: dict[str, Any] = field(default_factory=dict)  # free tier: min_interval_s, daily_requests, max_attempts
 
     @property
     def free(self) -> bool:
@@ -95,7 +102,14 @@ def load_models(path: Path | None = None) -> ModelsConfig:
     tier = raw.get("tier", "paid")
     if tier not in ("free", "paid"):
         raise ValueError(f"{path}: tier must be 'free' or 'paid', not {tier!r}")
-    config = ModelsConfig(path, tier, bool(raw.get("confirmed", False)), dict(raw.get("settings") or {}), models)
+    limits = dict(raw.get("limits") or {})
+    unknown = set(limits) - set(FREE_LIMITS)
+    if unknown:
+        raise ValueError(f"{path}: unknown limits {sorted(unknown)}; known: {sorted(FREE_LIMITS)}")
+    if tier == "free":
+        limits = {**FREE_LIMITS, **limits}
+    config = ModelsConfig(path, tier, bool(raw.get("confirmed", False)), dict(raw.get("settings") or {}), models,
+                          limits)
     if config.free:
         check_free_config(config)
     return config
@@ -142,11 +156,105 @@ def extract_code(text: str) -> str | None:
 
 
 class TransportError(Exception):
-    """Retryable: rate limit, server error, network failure."""
+    """Retryable: rate limit, server error, network failure. Never the model's fault."""
+
+    def __init__(self, message: str, *, status: int | None = None, retry_after_s: float | None = None,
+                 daily_exhausted: bool = False) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after_s = retry_after_s
+        self.daily_exhausted = daily_exhausted  # retrying cannot help before the reset
 
 
 class ApiError(Exception):
     """Not retryable: the request itself was rejected."""
+
+
+class QuotaExhausted(Exception):
+    """The local daily counter says no free-model requests are left today."""
+
+
+def _sleep(seconds: float) -> None:  # module-level so tests can replace it
+    time.sleep(seconds)
+
+
+def utc_today() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+
+class RateLimiter:
+    """At most one request start every `min_interval_s` seconds."""
+
+    def __init__(self, min_interval_s: float, *, clock: Callable[[], float] = time.monotonic,
+                 sleep: Callable[[float], None] = _sleep) -> None:
+        self.min_interval_s = min_interval_s
+        self._clock = clock
+        self._sleep = sleep
+        self._last: float | None = None
+
+    def wait(self) -> None:
+        if self._last is not None:
+            gap = self._last + self.min_interval_s - self._clock()
+            if gap > 0:
+                self._sleep(gap)
+        self._last = self._clock()
+
+
+class DailyQuota:
+    """Requests sent to free models in the current UTC day, persisted across runs.
+
+    Every HTTP attempt is counted before it is sent (retries too): OpenRouter
+    does not document whether failed free-model requests count, so we assume
+    they do."""
+
+    def __init__(self, path: Path, limit: int, *, today: Callable[[], str] = utc_today) -> None:
+        self.path = path
+        self.limit = limit
+        self._today = today
+
+    def used(self) -> int:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return 0
+        return int(data.get("requests", 0)) if data.get("date_utc") == self._today() else 0
+
+    def remaining(self) -> int:
+        return max(0, self.limit - self.used())
+
+    def _write(self, used: int) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"date_utc": self._today(), "requests": used, "limit": self.limit}),
+                       encoding="utf-8")
+        tmp.replace(self.path)
+
+    def take(self) -> None:
+        used = self.used()
+        if used >= self.limit:
+            raise QuotaExhausted(f"{used} of {self.limit} free-model requests used today ({self._today()} UTC); "
+                                 "the counter resets at 00:00 UTC")
+        self._write(used + 1)
+
+    def sync(self, server: dict[str, Any] | None) -> None:
+        """Adopt OpenRouter's own count (GET /key) when it is higher or its limit lower."""
+        if not server:
+            return
+        if server.get("limit") is not None:
+            self.limit = min(self.limit, int(server["limit"]))
+        if int(server.get("used") or 0) > self.used():
+            self._write(int(server["used"]))
+
+
+class FreeGate:
+    """Called before every HTTP attempt to a free model: count it, then pace it."""
+
+    def __init__(self, quota: DailyQuota, limiter: RateLimiter) -> None:
+        self.quota = quota
+        self.limiter = limiter
+
+    def acquire(self) -> None:
+        self.quota.take()
+        self.limiter.wait()
 
 
 @dataclass
@@ -171,14 +279,46 @@ def price_per_token(entry: dict[str, Any]) -> tuple[float, float]:
     return float(p.get("prompt", 0)), float(p.get("completion", 0))
 
 
+def fetch_key_status(api_key: str) -> dict[str, Any] | None:
+    """OpenRouter's free-model counter for this key ({used, limit, remaining}), or None.
+    Only that sub-object is returned: the rest of /key (label etc.) is never stored."""
+    req = urllib.request.Request(f"{API}/key", headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8")).get("data") or {}
+    except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+        return None
+    free = data.get("free_model_daily_requests")
+    return {k: free.get(k) for k in ("used", "limit", "remaining")} if isinstance(free, dict) else None
+
+
+def _rate_limit_error(code: int, headers: Any, detail: str) -> TransportError:
+    retry_after = None
+    try:
+        retry_after = float(headers.get("Retry-After")) if headers.get("Retry-After") else None
+    except (TypeError, ValueError):
+        pass
+    daily = False
+    try:  # free-model 429s carry X-RateLimit-Reset in ms since the epoch
+        reset_ms = float(headers.get("X-RateLimit-Reset"))
+        daily = headers.get("X-RateLimit-Remaining") == "0" and reset_ms / 1000 - time.time() > 120
+    except (TypeError, ValueError):
+        pass
+    reset = headers.get("X-RateLimit-Reset")
+    return TransportError(f"HTTP {code}" + (f" (X-RateLimit-Reset={reset})" if reset else "") + f": {detail[:300]}",
+                          status=code, retry_after_s=retry_after, daily_exhausted=daily)
+
+
 class OpenRouterClient:
     def __init__(self, api_key: str, settings: dict[str, Any], prices: dict[str, tuple[float, float]],
-                 *, max_attempts: int = 6, sleep: Callable[[float], None] = time.sleep) -> None:
+                 *, max_attempts: int = 6, sleep: Callable[[float], None] = _sleep,
+                 gate: FreeGate | None = None) -> None:
         self._key = api_key
         self.settings = settings
         self.prices = prices
         self.max_attempts = max_attempts
         self._sleep = sleep
+        self.gate = gate
 
     def body(self, model: Model, prompt: str) -> dict[str, Any]:
         return {"model": model.id, "messages": [{"role": "user", "content": prompt}],
@@ -188,13 +328,16 @@ class OpenRouterClient:
         payload = json.dumps(self.body(model, prompt)).encode("utf-8")
         started = time.monotonic()
         for attempt in range(1, self.max_attempts + 1):
+            if self.gate:
+                self.gate.acquire()  # may raise QuotaExhausted
             try:
                 raw = self._post(payload)
                 return self._reply(model, raw, time.monotonic() - started, attempt)
             except TransportError as e:
-                if attempt == self.max_attempts:
+                if e.daily_exhausted or attempt == self.max_attempts:
                     raise
-                wait = min(60.0, 2.0 ** attempt) + random.uniform(0, 1)
+                wait = e.retry_after_s if e.retry_after_s is not None else min(60.0, 2.0 ** (attempt + 1))
+                wait = min(120.0, wait) + random.uniform(0, 1)
                 print(f"    transport error ({e}); retry {attempt}/{self.max_attempts - 1} in {wait:.0f}s",
                       flush=True)
                 self._sleep(wait)
@@ -210,9 +353,11 @@ class OpenRouterClient:
             with urllib.request.urlopen(req, timeout=900) as resp:
                 raw = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:500]
-            if e.code == 429 or e.code >= 500:
-                raise TransportError(f"HTTP {e.code}") from None
+            detail = e.read().decode("utf-8", "replace")[:1000]
+            if e.code == 429:
+                raise _rate_limit_error(e.code, e.headers, detail) from None
+            if e.code >= 500:
+                raise TransportError(f"HTTP {e.code}: {detail[:300]}", status=e.code) from None
             raise ApiError(f"HTTP {e.code}: {detail}") from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise TransportError(type(e).__name__) from None
@@ -220,8 +365,8 @@ class OpenRouterClient:
         if error:
             code = error.get("code") if isinstance(error, dict) else None
             if isinstance(code, int) and (code == 429 or code >= 500):
-                raise TransportError(f"error {code}")
-            raise ApiError(json.dumps(error)[:500])
+                raise TransportError(f"error {code}: {json.dumps(error)[:300]}", status=code)
+            raise ApiError(json.dumps(error)[:1000])
         return raw
 
     def _reply(self, model: Model, raw: dict[str, Any], seconds: float, attempts: int) -> Reply:
@@ -332,15 +477,20 @@ class Job:
 
 @dataclass
 class RunState:
+    """run_meta.json across sessions: totals at the top, one entry per invocation in `sessions`."""
     run_dir: Path
     meta: dict[str, Any]
     budget: Budget
     calls: int = 0
     failures: list[str] = field(default_factory=list)
+    calls_before: int = 0
 
     def save_meta(self) -> None:
+        session = self.meta["sessions"][-1]
+        session.update(api_calls=self.calls - self.calls_before, stopped_reason=self.budget.stopped_reason,
+                       api_failures=self.failures)
         self.meta.update(spent_usd=round(self.budget.spent_usd, 6), api_calls=self.calls,
-                         stopped_reason=self.budget.stopped_reason, api_failures=self.failures)
+                         stopped_reason=self.budget.stopped_reason)
         (self.run_dir / "run_meta.json").write_text(json.dumps(self.meta, indent=2), encoding="utf-8")
 
 
@@ -359,12 +509,20 @@ def ask(client, job: Job, state: RunState, worst_case_usd: float) -> Path | None
         state.budget.stopped_reason = (f"budget: spent ${state.budget.spent_usd:.4f}; next call could cost up to "
                                        f"${worst_case_usd:.4f}; limit ${state.budget.max_usd:.2f}")
         return None
+    # None of these is the model's fault, so no verdict is written: the cell
+    # stays missing and re-running the same command asks it again.
+    cell = f"{job.model.slug}/{job.task.id}/trial_{job.trial}"
     try:
         reply = client.complete(job.model, prompt)
+    except QuotaExhausted as e:
+        state.budget.stopped_reason = f"quota: {e}"
+        return None
     except (TransportError, ApiError) as e:
-        state.failures.append(f"{job.model.slug}/{job.task.id}/trial_{job.trial}: {e}")
-        _write_json(job.out / "verdict.json", {"task_id": job.task.id, "status": "api_error",
-                                               "api_error": str(e), "passed": False, "scores": {"total": 0.0}})
+        kind = ("rate_limited" if isinstance(e, TransportError) and e.status == 429
+                else "transport" if isinstance(e, TransportError) else "api_error")
+        state.failures.append(f"{cell}: {kind}: {e}")
+        (job.out / "api_error.txt").write_text(f"{kind}\n{e}\n", encoding="utf-8")
+        state.budget.stopped_reason = f"{kind} at {cell}: {e}"
         return None
     state.calls += 1
     state.budget.spent_usd += reply.cost_usd
@@ -373,7 +531,10 @@ def ask(client, job: Job, state: RunState, worst_case_usd: float) -> Path | None
                                        f"${state.budget.spent_usd:.6f} > limit ${state.budget.max_usd:.2f}")
     (job.out / "raw_response.txt").write_text(reply.content, encoding="utf-8")
     _write_json(job.out / "response.json", reply.raw)
+    (job.out / "api_error.txt").unlink(missing_ok=True)  # left by an earlier, interrupted attempt
+    finish = ((reply.raw.get("choices") or [{}])[0] or {}).get("finish_reason")
     api = {"model_id": job.model.id, "served_model": reply.raw.get("model"), "provider": reply.raw.get("provider"),
+           "finish_reason": finish,
            "prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
            "cost_usd": reply.cost_usd, "seconds": reply.seconds, "attempts": reply.attempts}
     _write_json(job.out / "api.json", api)
@@ -440,7 +601,7 @@ def run(args: argparse.Namespace) -> int:
         settings = dict(config.settings)
         if config.free:
             settings["provider"] = {"max_price": dict(FREE_MAX_PRICE)}
-        client = OpenRouterClient(key, settings, prices)
+        client = OpenRouterClient(key, settings, prices, sleep=_sleep)
 
     max_tokens = int(config.settings.get("max_tokens", DEFAULT_OUTPUT_TOKENS))
     typical = typical_output_from(RESULTS / args.estimate_from) if args.estimate_from else {}
@@ -451,36 +612,63 @@ def run(args: argparse.Namespace) -> int:
         print(f"  {r['model']:24} {r['calls']:4} calls  typical ${r['typical_usd']:8.2f}  worst ${r['worst_usd']:8.2f}")
     print(f"  {'TOTAL':24} {sum(r['calls'] for r in rows):4} calls  typical ${sum(r['typical_usd'] for r in rows):8.2f}"
           f"  worst ${sum(r['worst_usd'] for r in rows):8.2f}   budget limit ${max_usd:.2f}")
-    if not args.dry_run and not args.yes:
-        print("estimate only; re-run with --yes (make ... YES=1) to start")
-        return 0
 
-    run_id = args.run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + (
+    signature = {"config": _rel(config.path), "models": [m.id for m in models], "tasks": [t.id for t in tasks],
+                 "trials": args.trials, "dry_run": args.dry_run}
+    run_id = args.run_id or (None if args.new else find_resumable(signature))
+    resuming = run_id is not None and (RESULTS / run_id / "run_meta.json").exists()
+    run_id = run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + (
         "-dry" if args.dry_run else "")
     run_dir = RESULTS / run_id
+    jobs = [Job(m, t, n, run_dir / m.slug / t.id / f"trial_{n}")
+            for n in range(1, args.trials + 1) for m in models for t in tasks]
+    todo = [j for j in jobs if not (j.out / "verdict.json").exists()]
+    print(f"run {run_id}: {'resuming, ' if resuming else 'new, '}{len(jobs) - len(todo)} of {len(jobs)} cells done, "
+          f"{len(todo)} to ask" + ("" if args.run_id or args.new else "  (--new starts a fresh run)"))
+
+    gate = None
+    if config.free and not args.dry_run:
+        quota = DailyQuota(quota_file(), int(config.limits["daily_requests"]))
+        server = fetch_key_status(key)
+        quota.sync(server)
+        print(f"free-model requests today ({utc_today()} UTC): {quota.used()} used of {quota.limit}, "
+              f"{quota.remaining()} left" + (f"  [OpenRouter reports {server}]" if server
+                                            else "  [OpenRouter /key unavailable; local count only]"))
+        if quota.remaining() < len(todo):
+            print(f"  note: {len(todo)} cells to ask but only {quota.remaining()} requests left today; the run "
+                  "will stop cleanly when they are used up. Re-run the same command after 00:00 UTC.")
+        gate = FreeGate(quota, RateLimiter(float(config.limits["min_interval_s"]), sleep=_sleep))
+        client.gate = gate
+        client.max_attempts = int(config.limits["max_attempts"])
+    if not args.dry_run and not args.yes:
+        print("estimate only; re-run with --yes (make ... YES=1, .\\run.ps1 ... -Yes) to start")
+        return 0
+    if not todo:
+        print("nothing to do")
+        return 0
+
     run_dir.mkdir(parents=True, exist_ok=True)
+    meta_file = run_dir / "run_meta.json"
+    prior = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     state = RunState(run_dir, {
-        "run_id": run_id,
-        "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "run_id": run_id, "signature": signature,
+        "started_utc": prior.get("started_utc", now),
         "git_commit": git_commit(), "dry_run": args.dry_run, "trials": args.trials,
-        "config": config.path.relative_to(ROOT).as_posix() if config.path.is_relative_to(ROOT) else str(config.path),
-        "tier": config.tier,
+        "config": _rel(config.path), "tier": config.tier, "limits": config.limits,
         "tasks": [t.id for t in tasks], "models": [{"slug": m.slug, "id": m.id} for m in models],
         "settings_sent": client.settings, "list_prices_usd_per_token": prices,
         "postgres_version": postgres_version(), "scheduler_caps": SCHEDULER_CAPS,
-        "grading_jobs": args.jobs, "budget_limit_usd": max_usd,
-    }, Budget(max_usd))
+        "grading_jobs": args.jobs, "budget_limit_usd": max_usd, "complete": False,
+        "sessions": prior.get("sessions", []) + [{"started_utc": now, "git_commit": git_commit()}],
+    }, Budget(max_usd, spent_usd=float(prior.get("spent_usd", 0.0))),
+        calls=int(prior.get("api_calls", 0)), calls_before=int(prior.get("api_calls", 0)))
     state.save_meta()
 
     pin_pout = {m.id: prices.get(m.id, (0.0, 0.0)) for m in models}
-    jobs = [Job(m, t, n, run_dir / m.slug / t.id / f"trial_{n}")
-            for n in range(1, args.trials + 1) for m in models for t in tasks]
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         pending = []
-        for job in jobs:
-            if (job.out / "verdict.json").exists():
-                print(f"  skip {job.model.slug}/{job.task.id}/trial_{job.trial} (already graded)")
-                continue
+        for job in todo:
             pin, pout = pin_pout[job.model.id]
             worst = len(build_prompt(job.task)) / CHARS_PER_TOKEN * pin + max_tokens * pout
             solution = ask(client, job, state, worst)
@@ -490,17 +678,58 @@ def run(args: argparse.Namespace) -> int:
             if state.budget.stopped_reason:
                 print(f"STOPPED: {state.budget.stopped_reason}")
                 break
+            left = f", {gate.quota.remaining()} free requests left today" if gate else ""
             print(f"  {job.model.slug}/{job.task.id}/trial_{job.trial}: "
-                  f"{'grading' if solution else 'no gradable code'} (spent ${state.budget.spent_usd:.4f})", flush=True)
+                  f"{'grading' if solution else 'no gradable code'} (spent ${state.budget.spent_usd:.4f}{left})",
+                  flush=True)
         for job, fut in pending:
             v = fut.result()
             print(f"  graded {job.model.slug}/{job.task.id}/trial_{job.trial}: "
                   f"status={v.get('status')} passed={v.get('passed')} total={v.get('scores', {}).get('total')}")
 
-    state.meta["finished_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    missing = sum(1 for j in jobs if not (j.out / "verdict.json").exists())
+    state.meta["complete"] = missing == 0
+    state.meta["sessions"][-1]["finished_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="seconds")
     state.save_meta()
-    print(f"run {run_id}: {state.calls} API call(s), spent ${state.budget.spent_usd:.4f} -> {run_dir}")
+    print(f"run {run_id}: {state.calls - state.calls_before} API call(s) this session, "
+          f"spent ${state.budget.spent_usd:.4f} -> {run_dir}")
+    if gate:
+        print(f"free-model requests left today: {gate.quota.remaining()} of {gate.quota.limit}")
+    if missing:
+        print(f"{missing} cell(s) still missing. Re-run the same command to continue this run.")
     return 1 if state.budget.stopped_reason else 0
+
+
+def _rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
+
+
+def find_resumable(signature: dict[str, Any]) -> str | None:
+    """Newest unfinished run started with the same config, models, tasks and trials."""
+    metas = sorted(RESULTS.glob("*/run_meta.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for meta_file in metas:
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if meta.get("signature") == signature and not meta.get("complete"):
+            return meta_file.parent.name
+    return None
+
+
+def quota_cmd(args: argparse.Namespace) -> int:
+    config = load_models(config_path(args.config))
+    if not config.free:
+        print(f"{config.path.name} is not a free config; no request quota applies")
+        return 0
+    quota = DailyQuota(quota_file(), int(config.limits["daily_requests"]))
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    server = fetch_key_status(key) if key else None
+    print(f"local counter ({quota_file().name}): {quota.used()} used of {quota.limit} today ({utc_today()} UTC), "
+          f"{quota.remaining()} left")
+    print(f"OpenRouter /key free_model_daily_requests: {server if server else 'unavailable'}")
+    return 0
 
 
 def list_free(catalog: dict[str, dict[str, Any]]) -> int:
@@ -559,11 +788,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--model", action="append", help="model slug (repeatable); default all")
     r.add_argument("--dry-run", action="store_true", help="mock model returning the reference; $0")
     r.add_argument("--yes", action="store_true", help="start the run after printing the estimate")
-    r.add_argument("--run-id", help="results/<run-id>; reuse one to resume")
+    r.add_argument("--run-id", help="results/<run-id>; default: resume the newest unfinished run of the same "
+                                    "config, models, tasks and trials, else start a new one")
+    r.add_argument("--new", action="store_true", help="start a new run even if an unfinished one matches")
     r.add_argument("--estimate-from", help="earlier run id whose token counts drive the estimate")
     r.add_argument("--jobs", type=int, default=1, help="solutions graded in parallel")
+    q = sub.add_parser("quota", help="free-model requests used and left today")
+    q.add_argument("--config", default=DEFAULT_CONFIG, help=config_help)
     args = p.parse_args(argv)
-    return models_cmd(args) if args.cmd == "models" else run(args)
+    return {"models": models_cmd, "quota": quota_cmd, "run": run}[args.cmd](args)
 
 
 if __name__ == "__main__":

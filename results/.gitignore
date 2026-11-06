@@ -1,3 +1,5 @@
 validation_partial.md
 *-dry/
 dryrun-*/
+.free_quota.json
+.free_quota.tmp

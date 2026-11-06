@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import time
 import uuid
 
 import pytest
@@ -134,29 +135,152 @@ def test_free_run_refuses_a_model_the_catalog_prices_above_zero(tmp_path, monkey
     assert "nonzero price" in capsys.readouterr().out
 
 
-def test_free_run_caps_the_price_and_stops_on_any_reported_cost(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
-    monkeypatch.delenv("LASTSEAT_MAX_COST_USD", raising=False)
+@pytest.fixture
+def free_env(tmp_path, monkeypatch):
+    """A free run with no network, no real sleeping, and results/ (and the quota file) in tmp."""
+    results = tmp_path / "results"
+    results.mkdir()
+    monkeypatch.setattr(runner, "RESULTS", results)
+    monkeypatch.setattr(runner, "_sleep", lambda s: None)
+    monkeypatch.setattr(runner, "fetch_key_status", lambda key: None)
     monkeypatch.setattr(runner, "fetch_catalog", lambda: {FREE_ID: {"id": FREE_ID, "pricing": ZERO}})
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    monkeypatch.setenv("LASTSEAT_MAX_COST_USD", "0")
+    return results
+
+
+def _fake_post(monkeypatch, responses):
     sent = []
 
     def fake_post(self, payload):
         sent.append(json.loads(payload))
-        return {**OK, "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.0001}}
+        r = responses.pop(0) if len(responses) > 1 else responses[0]  # the last response repeats
+        if isinstance(r, Exception):
+            raise r
+        return r
 
     monkeypatch.setattr(OpenRouterClient, "_post", fake_post)
-    run_id = f"test-free-{uuid.uuid4().hex[:8]}"
-    try:
-        argv = ["run", "--trials", "1", "--yes", "--task", "t01_flash_sale", "--task", "t02_on_call",
-                "--config", str(_free_config(tmp_path)), "--run-id", run_id]
-        assert runner.main(argv) == 1
-        assert len(sent) == 1, "the run must stop after the first reply that reports a cost"
-        assert sent[0]["provider"] == {"max_price": {"prompt": 0, "completion": 0, "request": 0, "image": 0}}
-        meta = json.loads((runner.RESULTS / run_id / "run_meta.json").read_text(encoding="utf-8"))
-        assert meta["tier"] == "free" and meta["budget_limit_usd"] == 0.0
-        assert "reported cost" in meta["stopped_reason"]  # stopped right after the reply, not at the next call
-    finally:
-        shutil.rmtree(runner.RESULTS / run_id, ignore_errors=True)
+    return sent
+
+
+TWO_TASKS = ["--task", "t01_flash_sale", "--task", "t02_on_call"]
+FREE_OK = {**OK, "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.0}}
+
+
+def test_free_run_caps_the_price_and_stops_on_any_reported_cost(tmp_path, monkeypatch, free_env):
+    monkeypatch.delenv("LASTSEAT_MAX_COST_USD", raising=False)
+    sent = _fake_post(monkeypatch, [{**OK, "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.0001}}])
+    argv = ["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(_free_config(tmp_path)), "--run-id", "r"]
+    assert runner.main(argv) == 1
+    assert len(sent) == 1, "the run must stop after the first reply that reports a cost"
+    assert sent[0]["provider"] == {"max_price": {"prompt": 0, "completion": 0, "request": 0, "image": 0}}
+    meta = json.loads((free_env / "r" / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["tier"] == "free" and meta["budget_limit_usd"] == 0.0
+    assert "reported cost" in meta["stopped_reason"]  # stopped right after the reply, not at the next call
+
+
+# --- free tier: rate limit, daily quota, resume --------------------------------
+
+
+def test_rate_limiter_spaces_request_starts():
+    now, slept = [100.0], []
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    limiter = runner.RateLimiter(4.0, clock=lambda: now[0], sleep=sleep)
+    limiter.wait()          # first request: no wait
+    now[0] += 1.0
+    limiter.wait()          # 1 s later: waits the remaining 3 s
+    now[0] += 10.0
+    limiter.wait()          # 10 s later: no wait
+    assert slept == [pytest.approx(3.0)]
+
+
+def test_daily_quota_persists_refuses_at_the_limit_and_resets_each_utc_day(tmp_path):
+    path, day = tmp_path / "q.json", ["2026-11-06"]
+    quota = runner.DailyQuota(path, 3, today=lambda: day[0])
+    for _ in range(3):
+        quota.take()
+    again = runner.DailyQuota(path, 3, today=lambda: day[0])  # a later run reads the same file
+    assert again.used() == 3 and again.remaining() == 0
+    with pytest.raises(runner.QuotaExhausted, match="3 of 3"):
+        again.take()
+    day[0] = "2026-11-07"
+    assert again.remaining() == 3
+
+
+def test_quota_adopts_openrouters_count_when_it_is_higher(tmp_path):
+    quota = runner.DailyQuota(tmp_path / "q.json", 50)
+    quota.take()
+    quota.sync({"used": 12, "limit": 50, "remaining": 38})
+    assert quota.used() == 12
+    quota.sync({"used": 3, "limit": 20, "remaining": 17})  # lower server count never lowers ours
+    assert quota.used() == 12 and quota.limit == 20
+
+
+def _gated_client(tmp_path, responses, limit=50):
+    quota = runner.DailyQuota(tmp_path / "q.json", limit)
+    client, calls = _client(responses, max_attempts=4)
+    client.gate = runner.FreeGate(quota, runner.RateLimiter(0, sleep=lambda s: None))
+    return client, calls, quota
+
+
+def test_per_minute_429_is_retried_and_every_attempt_is_counted(tmp_path):
+    minute = runner._rate_limit_error(429, {"Retry-After": "7"}, '{"error":{"code":429}}')
+    client, calls, quota = _gated_client(tmp_path, [minute, minute, OK])
+    waits = []
+    client._sleep = waits.append
+    assert client.complete(MODEL, "p").attempts == 3
+    assert len(calls) == 3 and quota.used() == 3
+    assert all(7 <= w < 8 for w in waits)  # Retry-After honoured
+
+
+def test_daily_429_is_not_retried(tmp_path):
+    reset_ms = str((time.time() + 6 * 3600) * 1000)
+    daily = runner._rate_limit_error(429, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset_ms}, "{}")
+    client, calls, _ = _gated_client(tmp_path, [daily, OK])
+    with pytest.raises(TransportError) as e:
+        client.complete(MODEL, "p")
+    assert e.value.daily_exhausted and len(calls) == 1
+
+
+def test_rate_limit_stops_without_a_verdict_and_the_same_command_resumes(tmp_path, monkeypatch, free_env, capsys):
+    minute = runner._rate_limit_error(429, {}, "Rate limit exceeded")
+    sent = _fake_post(monkeypatch, [FREE_OK, minute])
+    argv = ["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(_free_config(tmp_path))]
+
+    assert runner.main(argv) == 1
+    [first] = [p for p in free_env.iterdir() if p.is_dir()]
+    run_dir = first.rename(free_env / "an-earlier-run")  # so a fresh timestamped run could not land on it
+    t01, t02 = run_dir / "m0" / "t01_flash_sale" / "trial_1", run_dir / "m0" / "t02_on_call" / "trial_1"
+    assert (t01 / "verdict.json").exists()  # "hi" has no code: a genuine model result
+    assert not (t02 / "verdict.json").exists(), "a 429 must never be scored as a model failure"
+    assert "rate_limited" in (t02 / "api_error.txt").read_text(encoding="utf-8")
+    assert len(sent) == 1 + 4  # 1 answer + 4 attempts at the 429
+    assert "Re-run the same command" in capsys.readouterr().out
+
+    sent.clear()
+    _fake_post(monkeypatch, [FREE_OK])
+    assert runner.main(argv) == 0
+    assert [p for p in free_env.iterdir() if p.is_dir()] == [run_dir]  # same run, not a new one
+    assert (t02 / "verdict.json").exists() and not (t02 / "api_error.txt").exists()
+    meta = json.loads((run_dir / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["complete"] is True and len(meta["sessions"]) == 2
+    assert [s["api_calls"] for s in meta["sessions"]] == [1, 1]
+    assert json.loads((free_env / ".free_quota.json").read_text(encoding="utf-8"))["requests"] == 6
+
+
+def test_run_stops_cleanly_when_the_daily_quota_is_used_up(tmp_path, monkeypatch, free_env):
+    (free_env / ".free_quota.json").write_text(json.dumps({"date_utc": runner.utc_today(), "requests": 49}),
+                                               encoding="utf-8")
+    sent = _fake_post(monkeypatch, [FREE_OK])
+    argv = ["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(_free_config(tmp_path)), "--run-id", "r"]
+    assert runner.main(argv) == 1
+    assert len(sent) == 1, "the 51st request of the day must never be sent"
+    meta = json.loads((free_env / "r" / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["stopped_reason"].startswith("quota: 50 of 50") and meta["complete"] is False
 
 
 def test_dry_run_saves_everything_and_grades_the_reference():

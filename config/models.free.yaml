@@ -9,6 +9,14 @@
 tier: free
 confirmed: false
 
+# OpenRouter free-model limits for an account that never bought >= $10 credits:
+# 20 requests/minute, 50/day (UTC). Every HTTP attempt, retries included, is
+# counted in results/.free_quota.json and synced with OpenRouter's own counter.
+limits:
+  min_interval_s: 4      # at most one request every 4 s (15/min)
+  daily_requests: 50     # stop cleanly before OpenRouter would refuse
+  max_attempts: 4        # first try + 3 retries on 429 / 5xx / network errors
+
 # Identical to config/models.yaml so free and paid results are comparable.
 settings:
   max_tokens: 32000

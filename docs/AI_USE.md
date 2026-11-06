@@ -384,3 +384,37 @@ The paid path stays working behind `--config paid`.
 - Pick 2 free models; then set `confirmed: true` in `config/models.free.yaml`.
 - Interpretation: "refuse if LASTSEAT_MAX_COST_USD > 0" was implemented as a
   hard refusal for free runs.
+
+## M4b step 2: free-tier limits, resume, 429 handling
+
+**Claude drafted** (`lastseat/runner.py`, `config/models.free.yaml: limits`)
+- `RateLimiter`: at most one request start every 4 s.
+- `DailyQuota` in `results/.free_quota.json` (gitignored): every HTTP
+  attempt, retries included, is counted before it is sent; resets on a new
+  UTC date; synced at run start with OpenRouter's own counter
+  (`GET /api/v1/key` -> `free_model_daily_requests`, only used/limit/remaining
+  are kept). The 51st request of the day is never sent.
+- 429: per-minute -> honour `Retry-After` or back off, up to 3 retries;
+  daily (`X-RateLimit-Remaining: 0`, reset > 2 min away) -> stop at once.
+- Transport errors, 429s, quota exhaustion and rejected requests (4xx) no
+  longer write a verdict: the run stops, `api_error.txt` records the error,
+  and the cell stays missing. (Before, a rejected request was scored as an
+  `api_error` verdict and skipped on resume.)
+- Resume by default: the same command continues the newest unfinished run
+  with the same config/models/tasks/trials (`--new` forces a fresh run).
+  `run_meta.json` keeps totals plus one entry per session.
+- `api.json` now records `finish_reason` (to tell truncation from no code).
+- `quota` command (`make quota`, `.\run.ps1 quota`).
+
+**Verified by Claude**
+- `make test`: 76 passed. Mutation check: removing the gate, retrying a
+  daily 429, scoring a 429 as a verdict, or disabling auto-resume each fails
+  a test. (The resume test first passed by accident: two runs in the same
+  second got the same timestamp id. Fixed in the test.)
+- `.\run.ps1 dry-run`: 14/14 pass. `.\run.ps1 quota`: OpenRouter reports
+  0 of 50 used.
+
+**Human to review**
+- Policy: any 4xx stops the whole run without a verdict. A model that always
+  rejects one prompt would block resume until handled by hand.
+- Two runs at once would race on the quota file (not locked).

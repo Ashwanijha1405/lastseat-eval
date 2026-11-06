@@ -12,6 +12,7 @@ param(
     [Parameter(Position = 0)][string]$Command = "help",
     [string]$Config = "free",
     [switch]$Yes,
+    [switch]$New,
     [string]$Run,
     [string]$From,
     [int]$Jobs = 0,
@@ -36,6 +37,7 @@ function Invoke-Eval([string[]]$Rest) {
 function Get-RunnerArgs([int]$Trials) {
     $a = @("python", "-m", "lastseat.runner", "run", "--trials", "$Trials", "--config", $Config)
     if ($Yes) { $a += "--yes" }
+    if ($New) { $a += "--new" }
     if ($Run) { $a += @("--run-id", $Run) }
     if ($From) { $a += @("--estimate-from", $From) }
     if ($Jobs -gt 0) { $a += @("--jobs", "$Jobs") }
@@ -51,10 +53,12 @@ switch ($Command) {
             ".\run.ps1 validate [-Task t01_flash_sale]   references pass, wrong variants fail",
             ".\run.ps1 models [-Config paid]             live IDs and prices of a model set",
             ".\run.ps1 free-models                       every zero-priced :free model",
+            ".\run.ps1 quota                             free-model requests used / left today",
             ".\run.ps1 dry-run                           mock model returning the references, no API",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
-            "  run/pilot options: -Config free|paid (default free) -Run <id to resume> -From <pilot id>",
+            "  run/pilot options: -Config free|paid (default free) -Run <id> -New -From <pilot id>",
+            "  Re-running the same pilot/run command resumes its newest unfinished run (-New: fresh).",
             "                     -Jobs <n> -Task <id>[,<id>] -Model <slug>[,<slug>]"
         ) | ForEach-Object { Write-Output $_ }
     }
@@ -70,6 +74,7 @@ switch ($Command) {
     }
     "models" { Invoke-Eval @("python", "-m", "lastseat.runner", "models", "--config", $Config) }
     "free-models" { Invoke-Eval @("python", "-m", "lastseat.runner", "models", "--list-free") }
+    "quota" { Invoke-Eval @("python", "-m", "lastseat.runner", "quota", "--config", $Config) }
     "dry-run" { Start-Db; Invoke-Eval ((Get-RunnerArgs 1) + "--dry-run") }
     "pilot" { Start-Db; Invoke-Eval (Get-RunnerArgs 1) }
     "run" { Start-Db; Invoke-Eval (Get-RunnerArgs 5) }
