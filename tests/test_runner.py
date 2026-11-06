@@ -1,5 +1,6 @@
 """Runner: code extraction, retries, cost guard, refusal rules, dry-run pipeline. No network."""
 
+import http.client
 import json
 import shutil
 import time
@@ -304,3 +305,41 @@ def test_dry_run_saves_everything_and_grades_the_reference():
                             "--model", runner.load_models().models[0].slug, "--run-id", run_id]) == 0
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
+
+
+@pytest.mark.parametrize("failure", [
+    http.client.IncompleteRead(b"x" * 1463),   # connection dropped mid-body (seen in the first pilot)
+    ConnectionResetError("reset"),
+    TimeoutError("timed out"),
+])
+def test_broken_connections_are_transport_errors(monkeypatch, failure):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            raise failure
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", lambda req, timeout: Resp())
+    client = OpenRouterClient("sk-test", {}, {})
+    with pytest.raises(TransportError):
+        client._post(b"{}")
+
+
+def test_truncated_json_body_is_a_transport_error(monkeypatch):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"choices": [{"mess'
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", lambda req, timeout: Resp())
+    with pytest.raises(TransportError):
+        OpenRouterClient("sk-test", {}, {})._post(b"{}")

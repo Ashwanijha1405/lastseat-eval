@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import http.client
 import json
 import os
 import random
@@ -359,8 +360,10 @@ class OpenRouterClient:
             if e.code >= 500:
                 raise TransportError(f"HTTP {e.code}: {detail[:300]}", status=e.code) from None
             raise ApiError(f"HTTP {e.code}: {detail}") from None
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-            raise TransportError(type(e).__name__) from None
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            # URLError, timeouts and resets are OSErrors; a connection dropped mid-body
+            # raises IncompleteRead (HTTPException); a truncated body fails to parse (ValueError).
+            raise TransportError(f"{type(e).__name__}: {str(e)[:200]}") from None
         error = raw.get("error")
         if error:
             code = error.get("code") if isinstance(error, dict) else None
