@@ -1,0 +1,101 @@
+{
+  "task_id": "t04_room_booking",
+  "solution": "/app/tasks/t04_room_booking/wrong/w2_insert_where_not_exists.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "free slot is booked",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: free slot is booked\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 AND bool_and(room_id = 1 AND starts_at = '2026-11-09T10:00:00Z'\n                                 AND ends_at = '2026-11-09T11:00:00Z')\nFROM bookings\n\n"
+    },
+    {
+      "name": "overlapping booking is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: overlapping booking is refused cleanly\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 30, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:30:00+00:00'::timestamptz, '2026-11-09 11:30:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:30:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:30:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 0 []\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned False\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 FROM bookings\n"
+    },
+    {
+      "name": "booking inside an existing booking is refused",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: booking inside an existing booking is refused\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 0 []\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned False\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 FROM bookings\n"
+    },
+    {
+      "name": "back-to-back booking is allowed",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: back-to-back booking is allowed\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 11:00:00+00:00'::timestamptz, '2026-11-09 12:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 12:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 11:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(2,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 2 FROM bookings\n"
+    },
+    {
+      "name": "another room's booking does not block",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: another room's booking does not block\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(2,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 2 FROM bookings\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two overlapping requests for the same room",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 6,
+      "dfs_schedules": 6,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 4,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two overlapping requests for the same room\nR1: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 30, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 1, 0]\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R2  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:30:00+00:00'::timestamptz, '2026-11-09 11:30:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:30:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:30:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(2,)]\nstep 3   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned True\nstep 4   R2  COMMIT   [autocommit] -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no two bookings of the same room overlap  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 0.26
+    },
+    {
+      "name": "back-to-back requests for the same room",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 6,
+      "dfs_schedules": 6,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.17
+    },
+    {
+      "name": "same time in two different rooms",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 6,
+      "dfs_schedules": 6,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.17
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 0.5
+  },
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.88
+}

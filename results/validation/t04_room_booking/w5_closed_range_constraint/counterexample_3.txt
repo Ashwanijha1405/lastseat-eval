@@ -1,0 +1,9 @@
+solo check: back-to-back booking is allowed
+call: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc))
+schedule choices: []
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 11:00:00+00:00'::timestamptz, '2026-11-09 12:00:00+00:00'::timestamptz) -> ERROR 23P01 ExclusionViolation: conflicting key value violates exclusion constraint "bookings_no_overlap"
+step 3   R1  ROLLBACK -> ROLLBACK
+         R1  returned False
+invariant ok: no two bookings of the same room overlap
+INVARIANT VIOLATED: expected state: SELECT count(*) = 2 FROM bookings  (got [(False,)])

@@ -13,5 +13,5 @@ step 7   R2  COMMIT -> COMMIT
 step 8   R1  COMMIT -> ERROR 40001 SerializationFailure: could not serialize access due to read/write dependencies among transactions
          R1  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions
 invariant ok: every shift has at least one doctor on call
-invariant ok: Chen is still on call
+success check ok: Chen is still on call
 reproduced on re-run: True

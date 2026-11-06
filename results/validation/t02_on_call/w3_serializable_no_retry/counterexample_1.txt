@@ -13,6 +13,6 @@ step 7   R2  UPDATE doctors SET on_call = false WHERE id = 2 -> ERROR 40001 Seri
          R2  function ended inside an open transaction; harness rolled it back
          R2  raised SerializationFailure (40001): could not serialize access due to read/write dependencies among transactions
 invariant ok: every shift has at least one doctor on call
-invariant ok: Chen is still on call
+success check ok: Chen is still on call
 warning: R2: function ended inside an open transaction; harness rolled it back
 reproduced on re-run: True

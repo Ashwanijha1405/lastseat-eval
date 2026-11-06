@@ -60,6 +60,9 @@ class ScheduleAborted(BaseException):
 class Invariant:
     name: str
     sql: str  # must return exactly one row with one boolean; true = holds
+    # "safety": a rule that must hold however requests interleave.
+    # "success": evidence that valid requests really took effect (liveness).
+    kind: str = "safety"
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,7 @@ class InvariantResult:
     name: str
     holds: bool
     got: str
+    kind: str = "safety"
 
 
 @dataclass(frozen=True)
@@ -102,7 +106,13 @@ class ScheduleResult:
 
     @property
     def invariants_hold(self) -> bool:
-        return self.status == "ok" and all(i.holds for i in self.invariants)
+        """All safety invariants hold."""
+        return self.status == "ok" and all(i.holds for i in self.invariants if i.kind == "safety")
+
+    @property
+    def success_holds(self) -> bool:
+        """All success checks hold."""
+        return self.status == "ok" and all(i.holds for i in self.invariants if i.kind == "success")
 
     def trace(self) -> str:
         return self._render(lambda o: o.text, labels=True)
@@ -141,10 +151,9 @@ class ScheduleResult:
             notes(step, req, own)
 
         for inv in self.invariants:
-            if inv.holds:
-                lines.append(f"invariant ok: {inv.name}")
-            else:
-                lines.append(f"INVARIANT VIOLATED: {inv.name}  (got {inv.got})")
+            ok, bad = ("invariant ok", "INVARIANT VIOLATED") if inv.kind == "safety" else (
+                "success check ok", "SUCCESS CHECK FAILED")
+            lines.append(f"{ok}: {inv.name}" if inv.holds else f"{bad}: {inv.name}  (got {inv.got})")
         if self.status != "ok":
             lines.append(f"SCHEDULE {self.status.upper()}")
         lines.extend(f"warning: {w}" for w in self.warnings)
@@ -596,7 +605,8 @@ class Explorer:
             for inv in self.invariants:
                 try:
                     rows = conn.execute(inv.sql).fetchall()
-                    results.append(InvariantResult(inv.name, rows == [(True,)], repr(rows)))
+                    results.append(InvariantResult(inv.name, rows == [(True,)], repr(rows), inv.kind))
                 except psycopg.Error as e:
-                    results.append(InvariantResult(inv.name, False, f"ERROR {e.sqlstate}: {e.diag.message_primary}"))
+                    got = f"ERROR {e.sqlstate}: {e.diag.message_primary}"
+                    results.append(InvariantResult(inv.name, False, got, inv.kind))
         return results

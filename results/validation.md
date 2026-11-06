@@ -21,5 +21,11 @@ Schedules: number explored per concurrent scenario (`*` = cap reached, seeded-ra
 | t03_expense_budget | `wrong/w2_lock_approved_rows_sum_in_python.py` | fail safety | ❌ | ✅ | ✅ | 924, 350, 350, 924 | [1](validation/t03_expense_budget/w2_lock_approved_rows_sum_in_python/counterexample_1.txt) [2](validation/t03_expense_budget/w2_lock_approved_rows_sum_in_python/counterexample_2.txt) | ✅ ok |
 | t03_expense_budget | `wrong/w3_department_lock_repeatable_read.py` | fail safety | ❌ | ✅ | ✅ | 50, 50, 50, 924 | [1](validation/t03_expense_budget/w3_department_lock_repeatable_read/counterexample_1.txt) [2](validation/t03_expense_budget/w3_department_lock_repeatable_read/counterexample_2.txt) | ✅ ok |
 | t03_expense_budget | `wrong/w4_lock_approved_rows_then_sum.py` | fail safety | ❌ | ✅ | ✅ | 924, 148, 148, 924 | [1](validation/t03_expense_budget/w4_lock_approved_rows_then_sum/counterexample_1.txt) | ✅ ok |
+| t04_room_booking | `reference.py` | PASS | ✅ | ✅ | ✅ | 14, 20, 20 | - | ✅ ok |
+| t04_room_booking | `wrong/w1_check_then_insert.py` | fail safety | ❌ | ✅ | ✅ | 70, 70, 70 | [1](validation/t04_room_booking/w1_check_then_insert/counterexample_1.txt) | ✅ ok |
+| t04_room_booking | `wrong/w2_insert_where_not_exists.py` | fail safety | ❌ | ✅ | ✅ | 6, 6, 6 | [1](validation/t04_room_booking/w2_insert_where_not_exists/counterexample_1.txt) | ✅ ok |
+| t04_room_booking | `wrong/w3_for_update_on_empty_result.py` | fail safety | ❌ | ✅ | ✅ | 70, 70, 70 | [1](validation/t04_room_booking/w3_for_update_on_empty_result/counterexample_1.txt) | ✅ ok |
+| t04_room_booking | `wrong/w4_repeatable_read_check_then_insert.py` | fail safety | ❌ | ✅ | ✅ | 70, 70, 70 | [1](validation/t04_room_booking/w4_repeatable_read_check_then_insert/counterexample_1.txt) | ✅ ok |
+| t04_room_booking | `wrong/w5_closed_range_constraint.py` | fail liveness+solo | ✅ | ❌ | ❌ | 14, 14, 20 | [1](validation/t04_room_booking/w5_closed_range_constraint/counterexample_1.txt) [2](validation/t04_room_booking/w5_closed_range_constraint/counterexample_2.txt) [3](validation/t04_room_booking/w5_closed_range_constraint/counterexample_3.txt) | ✅ ok |
 
 **All checks passed.**

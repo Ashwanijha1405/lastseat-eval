@@ -177,7 +177,10 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
     def unlive(r: ScheduleResult) -> bool:
         if any(o.kind == "step_limit" for o in r.outcomes):
             return True
-        return sc.must_all_succeed and not all(o.kind == "returned" and o.value is True for o in r.outcomes)
+        if not sc.must_all_succeed:
+            return False
+        all_true = all(o.kind == "returned" and o.value is True for o in r.outcomes)
+        return not all_true or not r.success_holds
 
     _build(task, solution, name, sc.seed_sql, conninfo)
     requests = [_call(solution, kwargs) for kwargs in sc.requests]

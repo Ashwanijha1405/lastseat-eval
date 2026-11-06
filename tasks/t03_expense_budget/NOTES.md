@@ -48,3 +48,5 @@ REPEATABLE READ "to be safe". SERIALIZABLE without retry (cf. t02 w3).
 - 2026-11-06: created. First reference used 7 steps per request; the
   two-department scenario hit the 2000-schedule cap (C(14,7) = 3432), so it
   was rewritten to 5 steps (same lock-then-read logic) to explore exhaustively.
+- 2026-11-06: per-scenario "still on call" / "both approved" checks moved from
+  `invariants` (safety) to `success_sql` (liveness); see t04 NOTES.

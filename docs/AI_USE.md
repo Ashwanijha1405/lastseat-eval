@@ -199,3 +199,35 @@ Newest entries at the bottom.
   80–150 s each. Model solutions will be similar, so M4/M6 likely needs
   parallel grading (one subprocess per solution; db names already include
   the pid).
+
+---
+
+## M3 / t04 room booking + `success_sql` (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t04_room_booking/`: task.md, setup.sql (rooms, bookings), spec.yaml
+  (5 solo checks incl. back-to-back and contained interval; 3 scenarios),
+  reference (`migrate()` adds `btree_gist` + `EXCLUDE USING gist` on
+  `'[)'` ranges; insert catches `ExclusionViolation`), five wrong variants
+  (w1 check-then-insert, w2 `INSERT … WHERE NOT EXISTS`, w3 `FOR UPDATE` on
+  empty result, w4 REPEATABLE READ, w5 closed `'[]'` range), NOTES.md.
+- Grader change (human-approved): scenario key `success_sql` (allowed only in
+  `must_all_succeed` scenarios) whose checks count toward **liveness**;
+  `Invariant.kind` = safety | success; traces print `SUCCESS CHECK FAILED`.
+  t02/t03 liveness-scenario checks moved to `success_sql`. Loader test added.
+
+**Why the grader changed** (not to force a result): validation flagged w5
+as failing safety, because "both bookings exist" was a safety invariant.
+w5 never double-books; the check verifies rule 2 (valid requests succeed).
+Human chose to reclassify such checks as liveness.
+
+**Verified by Claude**
+- `make validate` (all four tasks) green after the change; `make test` 51.
+- Mutation: reference without `commit()` → safety 0.5 kept, liveness 0
+  (`SUCCESS CHECK FAILED: both bookings exist`), solo 0.
+- Alternative reference (lock `rooms` row) graded ad hoc: passes.
+
+**Human to review**
+- `tasks/t04_room_booking/task.md` wording; the datetime signature.
+- Whether t02's "Chen is still on call" belongs in liveness (it encodes
+  "only this doctor's row may change", stated under Behaviour).

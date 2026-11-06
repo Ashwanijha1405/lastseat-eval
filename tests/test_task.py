@@ -41,3 +41,20 @@ def test_malformed_spec_is_rejected(tmp_path, original, broken, message):
 
     with pytest.raises(TaskSpecError, match=message):
         load_task(task_dir)
+
+
+def test_success_sql_is_a_liveness_check(tmp_path):
+    task = load_task(TASKS_DIR / "t04_room_booking")
+    back_to_back = task.scenarios[1]
+    assert [(i.name, i.kind) for i in back_to_back.invariants] == [
+        ("no two bookings of the same room overlap", "safety"),
+        ("both bookings exist", "success"),
+    ]
+
+    task_dir = tmp_path / "t04_room_booking"
+    shutil.copytree(TASKS_DIR / "t04_room_booking", task_dir)
+    spec = task_dir / "spec.yaml"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("must_all_succeed: true", "must_all_succeed: false", 1),
+                    encoding="utf-8")
+    with pytest.raises(TaskSpecError, match="success_sql is only allowed"):
+        load_task(task_dir)

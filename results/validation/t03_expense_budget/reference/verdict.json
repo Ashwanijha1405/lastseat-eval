@@ -52,7 +52,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.03
+      "seconds": 0.98
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -84,7 +84,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.03
+      "seconds": 1.06
     },
     {
       "name": "approvals in two different departments",
@@ -100,7 +100,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.58
+      "seconds": 6.1
     }
   ],
   "scores": {
@@ -111,5 +111,5 @@
   },
   "passed": true,
   "reproducible": true,
-  "seconds": 9.92
+  "seconds": 9.45
 }

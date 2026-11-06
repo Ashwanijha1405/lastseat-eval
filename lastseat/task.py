@@ -36,7 +36,9 @@ class Scenario:
     seed_sql: str
     requests: tuple[dict[str, Any], ...]
     must_all_succeed: bool
-    invariants: tuple[Invariant, ...]  # task-wide ones first, then this scenario's
+    # Safety invariants (task-wide first, then this scenario's) followed by
+    # success checks (kind="success"; only in must_all_succeed scenarios).
+    invariants: tuple[Invariant, ...]
 
 
 @dataclass(frozen=True)
@@ -98,13 +100,20 @@ def load_task(directory: Path | str) -> Task:
         if len(requests) < 2 or not all(isinstance(r, dict) for r in requests):
             raise TaskSpecError(f"{ctx}: requests must be a list of at least two argument mappings")
         extra = tuple(_invariant(i, f"{ctx}: invariants[{k}]") for k, i in enumerate(f.opt("invariants", list, [])))
+        must_all_succeed = f.req("must_all_succeed", bool)
+        success = tuple(
+            _invariant(i, f"{ctx}: success_sql[{k}]", kind="success")
+            for k, i in enumerate(f.opt("success_sql", list, []))
+        )
+        if success and not must_all_succeed:
+            raise TaskSpecError(f"{ctx}: success_sql is only allowed when must_all_succeed is true")
         scenarios.append(
             Scenario(
                 name=f.req("name", str),
                 seed_sql=f.opt("seed_sql", str, default_seed),
                 requests=tuple(requests),
-                must_all_succeed=f.req("must_all_succeed", bool),
-                invariants=invariants + extra,
+                must_all_succeed=must_all_succeed,
+                invariants=invariants + extra + success,
             )
         )
         f.done()
@@ -129,9 +138,9 @@ def all_tasks() -> list[Task]:
     return [load_task(d) for d in sorted(TASKS_DIR.iterdir()) if (d / "spec.yaml").is_file()]
 
 
-def _invariant(raw: Any, ctx: str) -> Invariant:
+def _invariant(raw: Any, ctx: str, kind: str = "safety") -> Invariant:
     f = _Fields(raw, ctx)
-    inv = Invariant(f.req("name", str), f.req("sql", str))
+    inv = Invariant(f.req("name", str), f.req("sql", str), kind)
     f.done()
     return inv
 

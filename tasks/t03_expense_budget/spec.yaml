@@ -74,7 +74,7 @@ concurrent_scenarios:
       - {expense_id: 2}
       - {expense_id: 3}
     must_all_succeed: true
-    invariants:
+    success_sql:                 # evidence the valid requests took effect (liveness)
       - name: both expenses approved
         sql: SELECT bool_and(status = 'approved') FROM expenses WHERE id IN (2, 3)
   - name: approvals in two different departments
@@ -85,6 +85,6 @@ concurrent_scenarios:
       - {expense_id: 1}
       - {expense_id: 2}
     must_all_succeed: true
-    invariants:
+    success_sql:                 # evidence the valid requests took effect (liveness)
       - name: both expenses approved
         sql: SELECT bool_and(status = 'approved') FROM expenses WHERE id IN (1, 2)

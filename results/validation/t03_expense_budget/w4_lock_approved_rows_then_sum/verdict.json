@@ -54,7 +54,7 @@
       "counterexamples": [
         "scenario: nothing approved yet, two approvals that do not both fit\nR1: approve_expense(db, expense_id=1)\nR2: approve_expense(db, expense_id=2)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 1 -> [(1, 60, 'pending')]\nstep 3   R1  SELECT id FROM expenses WHERE department_id = 1 AND status = 'approved' FOR UPDATE -> []\nstep 4   R1  SELECT d.budget, COALESCE(sum(e.amount), 0) FROM departments d LEFT JOIN expenses e ON e.department_id = d.id AND e.status = 'approved' WHERE d.id = 1 GROUP BY d.budget -> [(100, 0)]\nstep 5   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT department_id, amount, status FROM expenses WHERE id = 2 -> [(1, 50, 'pending')]\nstep 8   R2  SELECT id FROM expenses WHERE department_id = 1 AND status = 'approved' FOR UPDATE -> []\nstep 9   R2  SELECT d.budget, COALESCE(sum(e.amount), 0) FROM departments d LEFT JOIN expenses e ON e.department_id = d.id AND e.status = 'approved' WHERE d.id = 1 GROUP BY d.budget -> [(100, 0)]\nstep 10  R1  COMMIT -> COMMIT\n         R1  returned True\nstep 11  R2  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 47.24
+      "seconds": 42.82
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -70,7 +70,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.38
+      "seconds": 4.08
     },
     {
       "name": "two approvals that both fit",
@@ -86,7 +86,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.54
+      "seconds": 4.38
     },
     {
       "name": "approvals in two different departments",
@@ -102,7 +102,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 25.6
+      "seconds": 24.39
     }
   ],
   "scores": {
@@ -113,5 +113,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 82.08
+  "seconds": 75.97
 }

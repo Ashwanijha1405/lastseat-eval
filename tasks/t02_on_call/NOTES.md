@@ -48,3 +48,5 @@ roll back first; counting doctors across all shifts (solo check 3).
 - 2026-11-06: created. Added scenario "one leaves from each of two shifts"
   so SERIALIZABLE-without-retry also fails where the requests do not even
   touch the same shift.
+- 2026-11-06: per-scenario "still on call" / "both approved" checks moved from
+  `invariants` (safety) to `success_sql` (liveness); see t04 NOTES.

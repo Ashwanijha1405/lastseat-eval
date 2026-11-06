@@ -1,0 +1,75 @@
+id: t04_room_booking
+title: Meeting-room booking without overlaps
+entrypoint: book_room
+signature: "book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool"
+
+seed_state_sql: |
+  INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+
+invariants:
+  - name: no two bookings of the same room overlap
+    sql: >
+      SELECT NOT EXISTS (
+        SELECT 1 FROM bookings a JOIN bookings b
+          ON a.room_id = b.room_id AND a.id < b.id
+         AND a.starts_at < b.ends_at AND b.starts_at < a.ends_at)
+
+solo_checks:
+  - name: free slot is booked
+    call: {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+    expect_return: true
+    expect_sql: >
+      SELECT count(*) = 1 AND bool_and(room_id = 1 AND starts_at = '2026-11-09T10:00:00Z'
+                                       AND ends_at = '2026-11-09T11:00:00Z')
+      FROM bookings
+  - name: overlapping booking is refused cleanly
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    call: {room_id: 1, starts_at: 2026-11-09T10:30:00Z, ends_at: 2026-11-09T11:30:00Z}
+    expect_return: false
+    expect_sql: SELECT count(*) = 1 FROM bookings
+  - name: booking inside an existing booking is refused
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T09:00:00Z', '2026-11-09T12:00:00Z');
+    call: {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+    expect_return: false
+    expect_sql: SELECT count(*) = 1 FROM bookings
+  - name: back-to-back booking is allowed
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    call: {room_id: 1, starts_at: 2026-11-09T11:00:00Z, ends_at: 2026-11-09T12:00:00Z}
+    expect_return: true
+    expect_sql: SELECT count(*) = 2 FROM bookings
+  - name: another room's booking does not block
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (2, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    call: {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+    expect_return: true
+    expect_sql: SELECT count(*) = 2 FROM bookings
+
+concurrent_scenarios:
+  - name: two overlapping requests for the same room
+    requests:
+      - {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+      - {room_id: 1, starts_at: 2026-11-09T10:30:00Z, ends_at: 2026-11-09T11:30:00Z}
+    must_all_succeed: false
+  - name: back-to-back requests for the same room
+    requests:
+      - {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+      - {room_id: 1, starts_at: 2026-11-09T11:00:00Z, ends_at: 2026-11-09T12:00:00Z}
+    must_all_succeed: true
+    success_sql:                 # evidence the valid requests took effect (liveness)
+      - name: both bookings exist
+        sql: SELECT count(*) = 2 FROM bookings
+  - name: same time in two different rooms
+    requests:
+      - {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+      - {room_id: 2, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}
+    must_all_succeed: true
+    success_sql:                 # evidence the valid requests took effect (liveness)
+      - name: both bookings exist
+        sql: SELECT count(*) = 2 FROM bookings
