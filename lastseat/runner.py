@@ -1,0 +1,471 @@
+"""Ask models to solve the tasks via OpenRouter, save everything, grade it (SPEC §8).
+
+    python -m lastseat.runner models                    # live IDs + prices for config/models.yaml
+    python -m lastseat.runner run --trials 1 --dry-run  # whole pipeline, mock model, $0
+    python -m lastseat.runner run --trials 5 [--yes]    # real run; without --yes only prints the estimate
+
+The API key comes only from OPENROUTER_API_KEY and is only ever sent in the
+Authorization header; it is never written to disk or printed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import random
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+import psycopg
+import yaml
+
+from .grade import grade_in_subprocess
+from .task import TASKS_DIR, Task, all_tasks, load_task
+
+ROOT = Path(__file__).resolve().parent.parent
+CONTRACT = Path(__file__).resolve().parent / "prompts" / "contract.md"
+MODELS_FILE = ROOT / "config" / "models.yaml"
+RESULTS = ROOT / "results"
+API = "https://openrouter.ai/api/v1"
+
+# Grader caps, recorded in run_meta.json (defaults of lastseat.grade / scheduler).
+SCHEDULER_CAPS = {"max_schedules": 2000, "random_schedules": 200, "random_seed": 0,
+                  "step_limit": 60, "schedule_timeout_s": 15.0}
+DEFAULT_OUTPUT_TOKENS = 8000  # estimate per call when no pilot run is given
+CHARS_PER_TOKEN = 4
+
+_PY_BLOCK = re.compile(r"```python[ \t]*\r?\n(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+# --- configuration ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Model:
+    slug: str
+    id: str
+
+
+@dataclass(frozen=True)
+class ModelsConfig:
+    confirmed: bool
+    settings: dict[str, Any]
+    models: tuple[Model, ...]
+
+
+def load_models(path: Path | None = None) -> ModelsConfig:
+    path = path or MODELS_FILE
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    models = tuple(Model(m["slug"], m["id"]) for m in raw["models"])
+    slugs = [m.slug for m in models]
+    if len(set(slugs)) != len(slugs) or not all(re.fullmatch(r"[a-z0-9._-]+", s) for s in slugs):
+        raise ValueError(f"{path}: model slugs must be unique and match [a-z0-9._-]+")
+    return ModelsConfig(bool(raw.get("confirmed", False)), dict(raw.get("settings") or {}), models)
+
+
+def build_prompt(task: Task) -> str:
+    return CONTRACT.read_text(encoding="utf-8") + "\n" + task.prompt
+
+
+def extract_code(text: str) -> str | None:
+    """The last ```python fenced block, or None."""
+    blocks = _PY_BLOCK.findall(text or "")
+    return blocks[-1] if blocks else None
+
+
+# --- OpenRouter -------------------------------------------------------------
+
+
+class TransportError(Exception):
+    """Retryable: rate limit, server error, network failure."""
+
+
+class ApiError(Exception):
+    """Not retryable: the request itself was rejected."""
+
+
+@dataclass
+class Reply:
+    content: str
+    raw: dict[str, Any]
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    seconds: float
+    attempts: int
+
+
+def fetch_catalog() -> dict[str, dict[str, Any]]:
+    with urllib.request.urlopen(f"{API}/models", timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))["data"]
+    return {m["id"]: m for m in data}
+
+
+def price_per_token(entry: dict[str, Any]) -> tuple[float, float]:
+    p = entry.get("pricing", {})
+    return float(p.get("prompt", 0)), float(p.get("completion", 0))
+
+
+class OpenRouterClient:
+    def __init__(self, api_key: str, settings: dict[str, Any], prices: dict[str, tuple[float, float]],
+                 *, max_attempts: int = 6, sleep: Callable[[float], None] = time.sleep) -> None:
+        self._key = api_key
+        self.settings = settings
+        self.prices = prices
+        self.max_attempts = max_attempts
+        self._sleep = sleep
+
+    def body(self, model: Model, prompt: str) -> dict[str, Any]:
+        return {"model": model.id, "messages": [{"role": "user", "content": prompt}],
+                "usage": {"include": True}, **self.settings}
+
+    def complete(self, model: Model, prompt: str) -> Reply:
+        payload = json.dumps(self.body(model, prompt)).encode("utf-8")
+        started = time.monotonic()
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                raw = self._post(payload)
+                return self._reply(model, raw, time.monotonic() - started, attempt)
+            except TransportError as e:
+                if attempt == self.max_attempts:
+                    raise
+                wait = min(60.0, 2.0 ** attempt) + random.uniform(0, 1)
+                print(f"    transport error ({e}); retry {attempt}/{self.max_attempts - 1} in {wait:.0f}s",
+                      flush=True)
+                self._sleep(wait)
+        raise AssertionError("unreachable")
+
+    def _post(self, payload: bytes) -> dict[str, Any]:
+        req = urllib.request.Request(
+            f"{API}/chat/completions", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json",
+                     "X-Title": "LastSeat eval"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=900) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:500]
+            if e.code == 429 or e.code >= 500:
+                raise TransportError(f"HTTP {e.code}") from None
+            raise ApiError(f"HTTP {e.code}: {detail}") from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            raise TransportError(type(e).__name__) from None
+        error = raw.get("error")
+        if error:
+            code = error.get("code") if isinstance(error, dict) else None
+            if isinstance(code, int) and (code == 429 or code >= 500):
+                raise TransportError(f"error {code}")
+            raise ApiError(json.dumps(error)[:500])
+        return raw
+
+    def _reply(self, model: Model, raw: dict[str, Any], seconds: float, attempts: int) -> Reply:
+        choices = raw.get("choices") or [{}]
+        content = (choices[0].get("message") or {}).get("content") or ""
+        usage = raw.get("usage") or {}
+        pt, ct = int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
+        cost = usage.get("cost")
+        if cost is None:  # fall back to list prices
+            pin, pout = self.prices.get(model.id, (0.0, 0.0))
+            cost = pt * pin + ct * pout
+        return Reply(content, raw, pt, ct, float(cost), round(seconds, 2), attempts)
+
+
+class MockClient:
+    """--dry-run: answers every task with its reference solution, at zero cost."""
+
+    settings: dict[str, Any] = {"mock": "returns reference.py"}
+
+    def __init__(self, tasks: dict[str, Task]) -> None:
+        self._by_prompt = {build_prompt(t): t for t in tasks.values()}
+
+    def body(self, model: Model, prompt: str) -> dict[str, Any]:
+        return {"model": model.id, "mock": True}
+
+    def complete(self, model: Model, prompt: str) -> Reply:
+        task = self._by_prompt[prompt]
+        code = task.reference_path.read_text(encoding="utf-8")
+        content = f"Here is my solution.\n\n```python\n{code}```\n"
+        raw = {"mock": True, "model": model.id, "choices": [{"message": {"content": content}}],
+               "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}}
+        return Reply(content, raw, 0, 0, 0.0, 0.0, 1)
+
+
+# --- cost -------------------------------------------------------------------
+
+
+@dataclass
+class Budget:
+    max_usd: float
+    spent_usd: float = 0.0
+    stopped_reason: str | None = None
+
+    def allows(self, worst_case_usd: float) -> bool:
+        return self.spent_usd + worst_case_usd <= self.max_usd
+
+
+def estimate(tasks: list[Task], models: tuple[Model, ...], trials: int, prices: dict[str, tuple[float, float]],
+             max_tokens: int, typical_output: dict[str, float]) -> list[dict[str, Any]]:
+    rows = []
+    for m in models:
+        pin, pout = prices.get(m.id, (0.0, 0.0))
+        in_tok = sum(len(build_prompt(t)) / CHARS_PER_TOKEN for t in tasks) * trials
+        calls = len(tasks) * trials
+        out_typ = typical_output.get(m.slug, DEFAULT_OUTPUT_TOKENS) * calls
+        rows.append({"model": m.slug, "calls": calls,
+                     "typical_usd": in_tok * pin + out_typ * pout,
+                     "worst_usd": in_tok * pin + max_tokens * calls * pout})
+    return rows
+
+
+def typical_output_from(run_dir: Path) -> dict[str, float]:
+    """Mean completion tokens per model slug in an earlier (pilot) run."""
+    sums: dict[str, list[int]] = {}
+    for v in run_dir.glob("*/*/trial_*/verdict.json"):
+        api = json.loads(v.read_text(encoding="utf-8")).get("api") or {}
+        if api.get("completion_tokens"):
+            sums.setdefault(v.parents[2].name, []).append(api["completion_tokens"])
+    return {slug: sum(xs) / len(xs) for slug, xs in sums.items()}
+
+
+# --- run --------------------------------------------------------------------
+
+
+def git_commit() -> str:
+    head = ROOT / ".git" / "HEAD"
+    try:
+        ref = head.read_text().strip()
+        if not ref.startswith("ref: "):
+            return ref
+        name = ref[5:]
+        loose = ROOT / ".git" / name
+        if loose.exists():
+            return loose.read_text().strip()
+        for line in (ROOT / ".git" / "packed-refs").read_text().splitlines():
+            if line.endswith(" " + name):
+                return line.split()[0]
+    except OSError:
+        pass
+    return "unknown"
+
+
+def postgres_version() -> str:
+    try:
+        with psycopg.connect(autocommit=True) as c:
+            return c.execute("SELECT version()").fetchone()[0]
+    except psycopg.Error as e:
+        return f"unavailable: {e}"
+
+
+@dataclass
+class Job:
+    model: Model
+    task: Task
+    trial: int
+    out: Path
+
+
+@dataclass
+class RunState:
+    run_dir: Path
+    meta: dict[str, Any]
+    budget: Budget
+    calls: int = 0
+    failures: list[str] = field(default_factory=list)
+
+    def save_meta(self) -> None:
+        self.meta.update(spent_usd=round(self.budget.spent_usd, 6), api_calls=self.calls,
+                         stopped_reason=self.budget.stopped_reason, api_failures=self.failures)
+        (self.run_dir / "run_meta.json").write_text(json.dumps(self.meta, indent=2), encoding="utf-8")
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.write_text(json.dumps(data, indent=2, default=repr), encoding="utf-8")
+
+
+def ask(client, job: Job, state: RunState, worst_case_usd: float) -> Path | None:
+    """Call the model for one trial and save its outputs. Returns the solution
+    path, or None when no gradable code exists (verdict already written)."""
+    job.out.mkdir(parents=True, exist_ok=True)
+    prompt = build_prompt(job.task)
+    (job.out / "prompt.txt").write_text(prompt, encoding="utf-8")
+    _write_json(job.out / "request.json", client.body(job.model, "<prompt.txt>"))
+    if not state.budget.allows(worst_case_usd):
+        state.budget.stopped_reason = (f"budget: spent ${state.budget.spent_usd:.4f}; next call could cost up to "
+                                       f"${worst_case_usd:.4f}; limit ${state.budget.max_usd:.2f}")
+        return None
+    try:
+        reply = client.complete(job.model, prompt)
+    except (TransportError, ApiError) as e:
+        state.failures.append(f"{job.model.slug}/{job.task.id}/trial_{job.trial}: {e}")
+        _write_json(job.out / "verdict.json", {"task_id": job.task.id, "status": "api_error",
+                                               "api_error": str(e), "passed": False, "scores": {"total": 0.0}})
+        return None
+    state.calls += 1
+    state.budget.spent_usd += reply.cost_usd
+    (job.out / "raw_response.txt").write_text(reply.content, encoding="utf-8")
+    _write_json(job.out / "response.json", reply.raw)
+    api = {"model_id": job.model.id, "served_model": reply.raw.get("model"), "provider": reply.raw.get("provider"),
+           "prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens,
+           "cost_usd": reply.cost_usd, "seconds": reply.seconds, "attempts": reply.attempts}
+    _write_json(job.out / "api.json", api)
+    code = extract_code(reply.content)
+    if code is None:
+        _write_json(job.out / "verdict.json", {"task_id": job.task.id, "status": "load_error",
+                                               "load_error": "no_code", "passed": False,
+                                               "scores": {"safety": 0.0, "solo": 0.0, "liveness": 0.0, "total": 0.0},
+                                               "api": api})
+        return None
+    solution = job.out / "solution.py"
+    solution.write_text(code, encoding="utf-8")
+    return solution
+
+
+def finish_grade(job: Job, solution: Path) -> dict[str, Any]:
+    verdict = grade_in_subprocess(job.task.directory, solution, job.out)
+    api_file = job.out / "api.json"
+    verdict["api"] = json.loads(api_file.read_text(encoding="utf-8")) if api_file.exists() else None
+    _write_json(job.out / "verdict.json", verdict)
+    return verdict
+
+
+def run(args: argparse.Namespace) -> int:
+    tasks = [load_task(TASKS_DIR / t) for t in args.task] if args.task else all_tasks()
+    config = load_models()
+    models = tuple(m for m in config.models if not args.model or m.slug in args.model)
+    if not models:
+        print("no models selected")
+        return 2
+
+    if args.dry_run:
+        client = MockClient({t.id: t for t in tasks})
+        prices: dict[str, tuple[float, float]] = {}
+        max_usd = 0.0
+    else:
+        if not config.confirmed:
+            print(f"refusing a paid run: {MODELS_FILE} has confirmed: false.\n"
+                  "Run `make models`, check every ID and price, then set confirmed: true.")
+            return 2
+        key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        limit = os.environ.get("LASTSEAT_MAX_COST_USD", "").strip()
+        if not key or not limit:
+            print("set OPENROUTER_API_KEY and LASTSEAT_MAX_COST_USD in .env")
+            return 2
+        max_usd = float(limit)
+        catalog = fetch_catalog()
+        missing = [m.id for m in models if m.id not in catalog]
+        if missing:
+            print(f"model IDs not on OpenRouter: {missing}")
+            return 2
+        prices = {m.id: price_per_token(catalog[m.id]) for m in models}
+        client = OpenRouterClient(key, config.settings, prices)
+
+    max_tokens = int(config.settings.get("max_tokens", DEFAULT_OUTPUT_TOKENS))
+    typical = typical_output_from(RESULTS / args.estimate_from) if args.estimate_from else {}
+    rows = estimate(tasks, models, args.trials, prices, max_tokens, typical)
+    basis = f"pilot run {args.estimate_from}" if typical else f"assumed {DEFAULT_OUTPUT_TOKENS} output tokens/call"
+    print(f"{len(models)} model(s) x {len(tasks)} task(s) x {args.trials} trial(s); estimate ({basis}):")
+    for r in rows:
+        print(f"  {r['model']:24} {r['calls']:4} calls  typical ${r['typical_usd']:8.2f}  worst ${r['worst_usd']:8.2f}")
+    print(f"  {'TOTAL':24} {sum(r['calls'] for r in rows):4} calls  typical ${sum(r['typical_usd'] for r in rows):8.2f}"
+          f"  worst ${sum(r['worst_usd'] for r in rows):8.2f}   budget limit ${max_usd:.2f}")
+    if not args.dry_run and not args.yes:
+        print("estimate only; re-run with --yes (make ... YES=1) to start")
+        return 0
+
+    run_id = args.run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + (
+        "-dry" if args.dry_run else "")
+    run_dir = RESULTS / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    state = RunState(run_dir, {
+        "run_id": run_id,
+        "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "git_commit": git_commit(), "dry_run": args.dry_run, "trials": args.trials,
+        "tasks": [t.id for t in tasks], "models": [{"slug": m.slug, "id": m.id} for m in models],
+        "settings_sent": client.settings, "list_prices_usd_per_token": prices,
+        "postgres_version": postgres_version(), "scheduler_caps": SCHEDULER_CAPS,
+        "grading_jobs": args.jobs, "budget_limit_usd": max_usd,
+    }, Budget(max_usd))
+    state.save_meta()
+
+    pin_pout = {m.id: prices.get(m.id, (0.0, 0.0)) for m in models}
+    jobs = [Job(m, t, n, run_dir / m.slug / t.id / f"trial_{n}")
+            for n in range(1, args.trials + 1) for m in models for t in tasks]
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        pending = []
+        for job in jobs:
+            if (job.out / "verdict.json").exists():
+                print(f"  skip {job.model.slug}/{job.task.id}/trial_{job.trial} (already graded)")
+                continue
+            pin, pout = pin_pout[job.model.id]
+            worst = len(build_prompt(job.task)) / CHARS_PER_TOKEN * pin + max_tokens * pout
+            solution = ask(client, job, state, worst)
+            state.save_meta()
+            if state.budget.stopped_reason:
+                print(f"STOPPED: {state.budget.stopped_reason}")
+                break
+            print(f"  {job.model.slug}/{job.task.id}/trial_{job.trial}: "
+                  f"{'grading' if solution else 'no gradable code'} (spent ${state.budget.spent_usd:.4f})", flush=True)
+            if solution:
+                pending.append((job, pool.submit(finish_grade, job, solution)))
+        for job, fut in pending:
+            v = fut.result()
+            print(f"  graded {job.model.slug}/{job.task.id}/trial_{job.trial}: "
+                  f"status={v.get('status')} passed={v.get('passed')} total={v.get('scores', {}).get('total')}")
+
+    state.meta["finished_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    state.save_meta()
+    print(f"run {run_id}: {state.calls} API call(s), spent ${state.budget.spent_usd:.4f} -> {run_dir}")
+    return 1 if state.budget.stopped_reason else 0
+
+
+def models_cmd(_: argparse.Namespace) -> int:
+    config = load_models()
+    catalog = fetch_catalog()
+    print(f"confirmed: {config.confirmed}   settings sent to every model: {json.dumps(config.settings)}")
+    print(f"{'slug':22} {'OpenRouter id':38} {'$/M in':>8} {'$/M out':>8} {'context':>9}  supports")
+    ok = True
+    for m in config.models:
+        entry = catalog.get(m.id)
+        if entry is None:
+            ok = False
+            print(f"{m.slug:22} {m.id:38}  NOT FOUND on OpenRouter")
+            continue
+        pin, pout = price_per_token(entry)
+        sp = set(entry.get("supported_parameters") or [])
+        flags = ",".join(p for p in ("reasoning", "max_tokens", "temperature") if p in sp)
+        print(f"{m.slug:22} {m.id:38} {pin * 1e6:8.3f} {pout * 1e6:8.3f} {entry.get('context_length', 0):9}  {flags}")
+        for k in config.settings:
+            if k not in sp:
+                print(f"{'':22} warning: {k!r} not in this model's supported_parameters")
+    return 0 if ok else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description="LastSeat model runner")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("models", help="show live IDs and prices for config/models.yaml")
+    r = sub.add_parser("run", help="ask models, save outputs, grade")
+    r.add_argument("--trials", type=int, default=5)
+    r.add_argument("--task", action="append", help="task id (repeatable); default all")
+    r.add_argument("--model", action="append", help="model slug (repeatable); default all")
+    r.add_argument("--dry-run", action="store_true", help="mock model returning the reference; $0")
+    r.add_argument("--yes", action="store_true", help="start a paid run after printing the estimate")
+    r.add_argument("--run-id", help="results/<run-id>; reuse one to resume")
+    r.add_argument("--estimate-from", help="earlier run id whose token counts drive the estimate")
+    r.add_argument("--jobs", type=int, default=1, help="solutions graded in parallel")
+    args = p.parse_args(argv)
+    return models_cmd(args) if args.cmd == "models" else run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

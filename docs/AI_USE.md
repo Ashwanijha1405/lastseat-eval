@@ -309,3 +309,43 @@ Human chose to reclassify such checks as liveness.
 **Human to review**
 - Whether relying on physical row order in the seed is acceptable (it is
   deterministic: fresh template clone, no autovacuum, sequential scan).
+
+---
+
+## M4: model runner (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `lastseat/runner.py`:
+  - `models` subcommand: live OpenRouter catalog lookup (no key) of the
+    configured IDs, prices, context, supported parameters.
+  - `run`: prompt = contract.md + task.md; OpenRouter chat completions via
+    stdlib `urllib` (no new dependency); retries only on 429/5xx/network
+    with backoff; last ```python block extracted; saves prompt.txt,
+    request.json, raw_response.txt, response.json, api.json, solution.py;
+    grades each solution in its own process; merges tokens/cost into
+    verdict.json; `no_code` and `api_error` verdicts; resumable by run id;
+    `--jobs` parallel grading; run_meta.json (git commit, models, settings
+    sent, list prices, Postgres version, scheduler caps, spend).
+  - Cost guard: estimate printed first (pilot token counts via
+    `--estimate-from`, else 8k output tokens/call, plus worst case at
+    `max_tokens`); paid run needs `--yes`; stops before any call whose worst
+    case would exceed `LASTSEAT_MAX_COST_USD`.
+  - Paid runs refused unless `config/models.yaml` has `confirmed: true`.
+  - `--dry-run`: mock model returns each task's reference.
+- `config/models.yaml` (proposed, unconfirmed), Makefile targets
+  `models / dry-run / pilot / run`, `tests/test_runner.py` (11 tests, no
+  network).
+
+**Verified by Claude**
+- `make test`: 63 passed. `make dry-run` (4 models × 7 tasks, 2 grading
+  jobs): 28/28 references pass, $0. `make pilot` with `confirmed: false`
+  refuses without touching the network. `make models`: all four proposed IDs
+  exist and support `reasoning` and `max_tokens`.
+- No paid API call has been made.
+
+**Human to review / decide**
+- Model IDs (exact strings from the live catalog) and whether the four
+  proposed models are the right ones.
+- Settings: `max_tokens: 32000`, `reasoning: {effort: high}`, no temperature.
+- Budget (`LASTSEAT_MAX_COST_USD`): estimate pilot ≈ $2.6 typical / $10
+  worst; full run ≈ $13 typical / $50 worst.

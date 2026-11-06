@@ -1,0 +1,22 @@
+# Models under test. IDs must exist on https://openrouter.ai/api/v1/models
+# (check with `make models`). A paid run is refused until a human has
+# checked the IDs and prices and set `confirmed: true`.
+confirmed: false
+
+# Sent identically to every model. `temperature` is deliberately not sent:
+# several candidate models reject it, so all use their provider default.
+settings:
+  max_tokens: 32000
+  reasoning:
+    effort: high
+
+# PROPOSED, not confirmed: 3 frontier models from different labs + 1 cheaper/open model.
+models:
+  - slug: claude-opus-5.5
+    id: anthropic/claude-opus-5.5
+  - slug: gpt-6.1-sol
+    id: openai/gpt-6.1-sol
+  - slug: gemini-4-argon
+    id: google/gemini-4-argon
+  - slug: deepseek-v4-pro
+    id: deepseek/deepseek-v4-pro-0813
