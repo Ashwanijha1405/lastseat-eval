@@ -1,8 +1,13 @@
 """Ask models to solve the tasks via OpenRouter, save everything, grade it (SPEC §8).
 
-    python -m lastseat.runner models                    # live IDs + prices for config/models.yaml
+    python -m lastseat.runner models [--config paid]    # live IDs + prices of the configured models
+    python -m lastseat.runner models --list-free        # every zero-priced ":free" model in the catalog
     python -m lastseat.runner run --trials 1 --dry-run  # whole pipeline, mock model, $0
     python -m lastseat.runner run --trials 5 [--yes]    # real run; without --yes only prints the estimate
+
+--config picks the model set: "free" (default, config/models.free.yaml),
+"paid" (config/models.yaml), or a path. A free config is held to zero spend
+in code: see check_free_config / check_free_catalog / FREE_MAX_PRICE.
 
 The API key comes only from OPENROUTER_API_KEY and is only ever sent in the
 Authorization header; it is never written to disk or printed.
@@ -33,7 +38,11 @@ from .task import TASKS_DIR, Task, all_tasks, load_task
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = Path(__file__).resolve().parent / "prompts" / "contract.md"
-MODELS_FILE = ROOT / "config" / "models.yaml"
+CONFIGS = {"free": ROOT / "config" / "models.free.yaml", "paid": ROOT / "config" / "models.yaml"}
+DEFAULT_CONFIG = "free"
+# Sent as provider.max_price on every free-tier request: OpenRouter refuses to
+# route the request to any provider that charges more than this.
+FREE_MAX_PRICE = {"prompt": 0, "completion": 0, "request": 0, "image": 0}
 RESULTS = ROOT / "results"
 API = "https://openrouter.ai/api/v1"
 
@@ -57,19 +66,66 @@ class Model:
 
 @dataclass(frozen=True)
 class ModelsConfig:
+    path: Path
+    tier: str  # "free" or "paid"
     confirmed: bool
     settings: dict[str, Any]
     models: tuple[Model, ...]
 
+    @property
+    def free(self) -> bool:
+        return self.tier == "free"
+
+
+def config_path(name: str | None) -> Path:
+    name = name or DEFAULT_CONFIG
+    if name in CONFIGS:
+        return CONFIGS[name]
+    p = Path(name)
+    return p if p.is_absolute() else ROOT / p
+
 
 def load_models(path: Path | None = None) -> ModelsConfig:
-    path = path or MODELS_FILE
+    path = path or CONFIGS[DEFAULT_CONFIG]
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     models = tuple(Model(m["slug"], m["id"]) for m in raw["models"])
     slugs = [m.slug for m in models]
     if len(set(slugs)) != len(slugs) or not all(re.fullmatch(r"[a-z0-9._-]+", s) for s in slugs):
         raise ValueError(f"{path}: model slugs must be unique and match [a-z0-9._-]+")
-    return ModelsConfig(bool(raw.get("confirmed", False)), dict(raw.get("settings") or {}), models)
+    tier = raw.get("tier", "paid")
+    if tier not in ("free", "paid"):
+        raise ValueError(f"{path}: tier must be 'free' or 'paid', not {tier!r}")
+    config = ModelsConfig(path, tier, bool(raw.get("confirmed", False)), dict(raw.get("settings") or {}), models)
+    if config.free:
+        check_free_config(config)
+    return config
+
+
+def check_free_config(config: ModelsConfig) -> None:
+    """Free tier, part 1 (offline): only ":free" IDs, and no way to override the price cap."""
+    paid = [m.id for m in config.models if not m.id.endswith(":free")]
+    if paid:
+        raise ValueError(f"{config.path}: tier is free but these IDs do not end in ':free': {paid}")
+    if "provider" in config.settings:
+        raise ValueError(f"{config.path}: a free config may not set 'provider'; the runner pins "
+                         f"provider.max_price to {FREE_MAX_PRICE}")
+
+
+def is_zero_priced(entry: dict[str, Any]) -> bool:
+    """Every price the catalog lists for this model (prompt, completion, request, image, ...) is 0."""
+    prices = (entry.get("pricing") or {}).values()
+    try:
+        return bool(prices) and all(float(v) == 0 for v in prices)
+    except (TypeError, ValueError):
+        return False
+
+
+def check_free_catalog(models: tuple[Model, ...], catalog: dict[str, dict[str, Any]]) -> list[str]:
+    """Free tier, part 2 (live catalog): problems that must stop the run; empty when all is free."""
+    problems = [f"{m.id}: not on OpenRouter" for m in models if m.id not in catalog]
+    problems += [f"{m.id}: catalog lists a nonzero price {catalog[m.id].get('pricing')}"
+                 for m in models if m.id in catalog and not is_zero_priced(catalog[m.id])]
+    return problems
 
 
 def build_prompt(task: Task) -> str:
@@ -312,6 +368,9 @@ def ask(client, job: Job, state: RunState, worst_case_usd: float) -> Path | None
         return None
     state.calls += 1
     state.budget.spent_usd += reply.cost_usd
+    if state.budget.spent_usd > state.budget.max_usd:  # a free run has max_usd 0: any reported cost stops it
+        state.budget.stopped_reason = (f"budget: {job.model.id} reported cost ${reply.cost_usd:.6f}; spent "
+                                       f"${state.budget.spent_usd:.6f} > limit ${state.budget.max_usd:.2f}")
     (job.out / "raw_response.txt").write_text(reply.content, encoding="utf-8")
     _write_json(job.out / "response.json", reply.raw)
     api = {"model_id": job.model.id, "served_model": reply.raw.get("model"), "provider": reply.raw.get("provider"),
@@ -340,7 +399,7 @@ def finish_grade(job: Job, solution: Path) -> dict[str, Any]:
 
 def run(args: argparse.Namespace) -> int:
     tasks = [load_task(TASKS_DIR / t) for t in args.task] if args.task else all_tasks()
-    config = load_models()
+    config = load_models(config_path(args.config))
     models = tuple(m for m in config.models if not args.model or m.slug in args.model)
     if not models:
         print("no models selected")
@@ -352,22 +411,36 @@ def run(args: argparse.Namespace) -> int:
         max_usd = 0.0
     else:
         if not config.confirmed:
-            print(f"refusing a paid run: {MODELS_FILE} has confirmed: false.\n"
-                  "Run `make models`, check every ID and price, then set confirmed: true.")
+            print(f"refusing to call models: {config.path} has confirmed: false.\n"
+                  "Run `make models` (or .\run.ps1 models), check every ID and price, then set confirmed: true.")
             return 2
         key = os.environ.get("OPENROUTER_API_KEY", "").strip()
         limit = os.environ.get("LASTSEAT_MAX_COST_USD", "").strip()
-        if not key or not limit:
-            print("set OPENROUTER_API_KEY and LASTSEAT_MAX_COST_USD in .env")
+        if not key:
+            print("set OPENROUTER_API_KEY in .env")
             return 2
-        max_usd = float(limit)
+        if config.free:
+            if limit and float(limit) != 0:
+                print(f"refusing a free run: LASTSEAT_MAX_COST_USD={limit}. A free run is capped at $0; "
+                      "set it to 0 (or unset it), or use --config paid for a paid run.")
+                return 2
+            max_usd = 0.0
+        else:
+            if not limit or float(limit) <= 0:
+                print("a paid run needs LASTSEAT_MAX_COST_USD > 0 in .env")
+                return 2
+            max_usd = float(limit)
         catalog = fetch_catalog()
-        missing = [m.id for m in models if m.id not in catalog]
-        if missing:
-            print(f"model IDs not on OpenRouter: {missing}")
+        problems = (check_free_catalog(models, catalog) if config.free
+                    else [f"{m.id}: not on OpenRouter" for m in models if m.id not in catalog])
+        if problems:
+            print("refusing to start:\n  " + "\n  ".join(problems))
             return 2
         prices = {m.id: price_per_token(catalog[m.id]) for m in models}
-        client = OpenRouterClient(key, config.settings, prices)
+        settings = dict(config.settings)
+        if config.free:
+            settings["provider"] = {"max_price": dict(FREE_MAX_PRICE)}
+        client = OpenRouterClient(key, settings, prices)
 
     max_tokens = int(config.settings.get("max_tokens", DEFAULT_OUTPUT_TOKENS))
     typical = typical_output_from(RESULTS / args.estimate_from) if args.estimate_from else {}
@@ -390,6 +463,8 @@ def run(args: argparse.Namespace) -> int:
         "run_id": run_id,
         "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "git_commit": git_commit(), "dry_run": args.dry_run, "trials": args.trials,
+        "config": config.path.relative_to(ROOT).as_posix() if config.path.is_relative_to(ROOT) else str(config.path),
+        "tier": config.tier,
         "tasks": [t.id for t in tasks], "models": [{"slug": m.slug, "id": m.id} for m in models],
         "settings_sent": client.settings, "list_prices_usd_per_token": prices,
         "postgres_version": postgres_version(), "scheduler_caps": SCHEDULER_CAPS,
@@ -410,13 +485,13 @@ def run(args: argparse.Namespace) -> int:
             worst = len(build_prompt(job.task)) / CHARS_PER_TOKEN * pin + max_tokens * pout
             solution = ask(client, job, state, worst)
             state.save_meta()
+            if solution:  # an answer that was already received is graded even if the run now stops
+                pending.append((job, pool.submit(finish_grade, job, solution)))
             if state.budget.stopped_reason:
                 print(f"STOPPED: {state.budget.stopped_reason}")
                 break
             print(f"  {job.model.slug}/{job.task.id}/trial_{job.trial}: "
                   f"{'grading' if solution else 'no gradable code'} (spent ${state.budget.spent_usd:.4f})", flush=True)
-            if solution:
-                pending.append((job, pool.submit(finish_grade, job, solution)))
         for job, fut in pending:
             v = fut.result()
             print(f"  graded {job.model.slug}/{job.task.id}/trial_{job.trial}: "
@@ -428,10 +503,30 @@ def run(args: argparse.Namespace) -> int:
     return 1 if state.budget.stopped_reason else 0
 
 
-def models_cmd(_: argparse.Namespace) -> int:
-    config = load_models()
+def list_free(catalog: dict[str, dict[str, Any]]) -> int:
+    free = sorted((m for i, m in catalog.items() if i.endswith(":free") and is_zero_priced(m)),
+                  key=lambda m: -m.get("created", 0))
+    print(f"{len(free)} zero-priced ':free' models of {len(catalog)} (newest first)")
+    print(f"{'OpenRouter id':52} {'context':>9} {'max out':>8}  created     reasoning")
+    for m in free:
+        created = datetime.date.fromtimestamp(m.get("created", 0)).isoformat()
+        max_out = (m.get("top_provider") or {}).get("max_completion_tokens") or 0
+        reasoning = "reasoning" in (m.get("supported_parameters") or [])
+        print(f"{m['id']:52} {m.get('context_length', 0):9} {max_out:8}  {created}  {reasoning}")
+    return 0
+
+
+def models_cmd(args: argparse.Namespace) -> int:
     catalog = fetch_catalog()
-    print(f"confirmed: {config.confirmed}   settings sent to every model: {json.dumps(config.settings)}")
+    if args.list_free:
+        return list_free(catalog)
+    config = load_models(config_path(args.config))
+    print(f"config: {config.path.name}   tier: {config.tier}   confirmed: {config.confirmed}")
+    print(f"settings sent to every model: {json.dumps(config.settings)}"
+          + (f" + provider.max_price={json.dumps(FREE_MAX_PRICE)}" if config.free else ""))
+    if config.free:
+        for problem in check_free_catalog(config.models, catalog):
+            print(f"  FREE-TIER CHECK FAILS: {problem}")
     print(f"{'slug':22} {'OpenRouter id':38} {'$/M in':>8} {'$/M out':>8} {'context':>9}  supports")
     ok = True
     for m in config.models:
@@ -453,13 +548,17 @@ def models_cmd(_: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="LastSeat model runner")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("models", help="show live IDs and prices for config/models.yaml")
+    config_help = "model set: free (default, config/models.free.yaml), paid (config/models.yaml), or a path"
+    mo = sub.add_parser("models", help="show live IDs and prices of the configured models")
+    mo.add_argument("--config", default=DEFAULT_CONFIG, help=config_help)
+    mo.add_argument("--list-free", action="store_true", help="list every zero-priced ':free' model instead")
     r = sub.add_parser("run", help="ask models, save outputs, grade")
+    r.add_argument("--config", default=DEFAULT_CONFIG, help=config_help)
     r.add_argument("--trials", type=int, default=5)
     r.add_argument("--task", action="append", help="task id (repeatable); default all")
     r.add_argument("--model", action="append", help="model slug (repeatable); default all")
     r.add_argument("--dry-run", action="store_true", help="mock model returning the reference; $0")
-    r.add_argument("--yes", action="store_true", help="start a paid run after printing the estimate")
+    r.add_argument("--yes", action="store_true", help="start the run after printing the estimate")
     r.add_argument("--run-id", help="results/<run-id>; reuse one to resume")
     r.add_argument("--estimate-from", help="earlier run id whose token counts drive the estimate")
     r.add_argument("--jobs", type=int, default=1, help="solutions graded in parallel")

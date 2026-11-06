@@ -349,3 +349,38 @@ Human chose to reclassify such checks as liveness.
 - Settings: `max_tokens: 32000`, `reasoning: {effort: high}`, no temperature.
 - Budget (`LASTSEAT_MAX_COST_USD`): estimate pilot ≈ $2.6 typical / $10
   worst; full run ≈ $13 typical / $50 worst.
+
+## M4b step 1: free model set (zero spend enforced in code)
+
+Context: no international card, so runs default to free OpenRouter models.
+The paid path stays working behind `--config paid`.
+
+**Claude drafted**
+- `config/models.free.yaml` (`tier: free`, default) next to the paid
+  `config/models.yaml` (`tier: paid`); same settings in both.
+- `lastseat/runner.py`: `--config free|paid|<path>` on `run` and `models`;
+  `models --list-free`. Free-tier guards, each with a test:
+  1. load time: every ID must end in `:free`; `provider` may not be set;
+  2. start: `LASTSEAT_MAX_COST_USD` must be 0 or unset (budget is $0);
+  3. start: live catalog must list every price of every model as exactly 0;
+  4. every request carries `provider.max_price` = 0 (OpenRouter refuses a
+     paid route);
+  5. after each reply: any reported cost > 0 stops the run at once.
+  A paid run now needs `LASTSEAT_MAX_COST_USD > 0`.
+- `run.ps1`: PowerShell twin of the Makefile (`-Config -Yes -Run -From -Jobs
+  -Task -Model`). Makefile: `CONFIG=`, `free-models`.
+- 6 new tests in `tests/test_runner.py`.
+
+**Verified by Claude**
+- `make test`: 69 passed. Mutation check: disabling guard 1, 3, 4 or 5 makes
+  a test fail (guard 2 is checked before any network access by its test).
+- `.\run.ps1 models` / `free-models` / `pilot` work on Windows PowerShell
+  5.1; the pilot refuses while `confirmed: false`. No model API call made.
+- Not yet verified live: that free endpoints accept `provider.max_price` = 0
+  (the docs say a request fails if no provider is within the cap). The first
+  pilot request will show it.
+
+**Human to review / decide**
+- Pick 2 free models; then set `confirmed: true` in `config/models.free.yaml`.
+- Interpretation: "refuse if LASTSEAT_MAX_COST_USD > 0" was implemented as a
+  hard refusal for free runs.

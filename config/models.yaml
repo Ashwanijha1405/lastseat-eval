@@ -1,6 +1,8 @@
-# Models under test. IDs must exist on https://openrouter.ai/api/v1/models
-# (check with `make models`). A paid run is refused until a human has
-# checked the IDs and prices and set `confirmed: true`.
+# Paid model set (--config paid). IDs must exist on https://openrouter.ai/api/v1/models
+# (check with `make models CONFIG=paid`). A paid run is refused until a human has
+# checked the IDs and prices and set `confirmed: true`, and needs
+# LASTSEAT_MAX_COST_USD > 0.
+tier: paid
 confirmed: false
 
 # Sent identically to every model. `temperature` is deliberately not sent:

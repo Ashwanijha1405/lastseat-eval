@@ -1,0 +1,23 @@
+# Free model set: the default (--config free). Zero spend is enforced by
+# lastseat/runner.py, not by this file:
+#   1. tier: free  -> every id must end in ":free" (checked when this file loads)
+#   2. the live catalog must list every price of every model as exactly 0
+#   3. each request carries provider.max_price = 0, so OpenRouter refuses any paid route
+#   4. LASTSEAT_MAX_COST_USD must be 0 or unset; the budget is $0
+#   5. if any reply still reports cost > 0, the run stops at once
+# List every free model with: make free-models  (or .\run.ps1 free-models)
+tier: free
+confirmed: false
+
+# Identical to config/models.yaml so free and paid results are comparable.
+settings:
+  max_tokens: 32000
+  reasoning:
+    effort: high
+
+# Picked by the human on 2026-11-06 from the live free list (`make free-models`).
+models:
+  - slug: nemotron-3-ultra
+    id: nvidia/nemotron-3-ultra-550b-a55b:free
+  - slug: gemma-4-31b
+    id: google/gemma-4-31b-it:free
