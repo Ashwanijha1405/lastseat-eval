@@ -35,10 +35,20 @@ SUCCESS_MEANS = ("returns_true", "returns")
 
 
 @dataclass(frozen=True)
+class Call:
+    """One request: which entrypoint function, with which keyword arguments."""
+    fn: str
+    args: dict[str, Any]
+
+    def __str__(self) -> str:
+        return f"{self.fn}(db, {', '.join(f'{k}={v!r}' for k, v in self.args.items())})"
+
+
+@dataclass(frozen=True)
 class SoloCheck:
     name: str
     seed_sql: str
-    call: dict[str, Any]
+    call: Call
     expect_return: Any  # or ANY_RETURN
     expect_sql: str | None  # may use %(r1)s for the returned value
 
@@ -47,7 +57,7 @@ class SoloCheck:
 class Scenario:
     name: str
     seed_sql: str
-    requests: tuple[dict[str, Any], ...]
+    requests: tuple[Call, ...]
     must_all_succeed: bool
     # Safety invariants (task-wide first, then this scenario's) followed by
     # success checks (kind="success"; only in must_all_succeed scenarios).
@@ -58,7 +68,7 @@ class Scenario:
 class Task:
     id: str
     title: str
-    entrypoint: str
+    entrypoints: tuple[str, ...]  # the functions the model must write
     signature: str
     directory: Path
     setup_sql: str
@@ -75,6 +85,11 @@ class Task:
     @property
     def wrong_paths(self) -> list[Path]:
         return sorted((self.directory / "wrong").glob("*.py"))
+
+    def expects_success(self, check: SoloCheck) -> bool:
+        """True for solo checks in which the operation should go through: those that
+        expect True, or every check when success means just returning a value."""
+        return self.success_means == "returns" or check.expect_return is True
 
 
 def load_task(directory: Path | str) -> Task:
@@ -94,6 +109,7 @@ def load_task(directory: Path | str) -> Task:
     if success_means not in SUCCESS_MEANS:
         raise TaskSpecError(f"{where}: success_means must be one of {SUCCESS_MEANS}, got {success_means!r}")
     invariants = tuple(_invariant(i, f"{where}: invariants[{n}]") for n, i in enumerate(spec.opt("invariants", list, [])))
+    entrypoints = _entrypoints(spec, str(where))
 
     solo = []
     for n, raw_check in enumerate(spec.req("solo_checks", list)):
@@ -102,7 +118,7 @@ def load_task(directory: Path | str) -> Task:
         check = SoloCheck(
             name=f.req("name", str),
             seed_sql=f.opt("seed_sql", str, default_seed),
-            call=f.req("call", dict),
+            call=_call(f.req("call", dict), entrypoints, f"{ctx}: call"),
             expect_return=f.opt("expect_return", object, ANY_RETURN),
             expect_sql=f.opt("expect_sql", str, None),
         )
@@ -118,6 +134,7 @@ def load_task(directory: Path | str) -> Task:
         requests = f.req("requests", list)
         if len(requests) < 2 or not all(isinstance(r, dict) for r in requests):
             raise TaskSpecError(f"{ctx}: requests must be a list of at least two argument mappings")
+        requests = [_call(r, entrypoints, f"{ctx}: requests[{k}]") for k, r in enumerate(requests)]
         extra = tuple(_invariant(i, f"{ctx}: invariants[{k}]") for k, i in enumerate(f.opt("invariants", list, [])))
         must_all_succeed = f.req("must_all_succeed", bool)
         success = tuple(
@@ -140,7 +157,7 @@ def load_task(directory: Path | str) -> Task:
     task = Task(
         id=task_id,
         title=spec.req("title", str),
-        entrypoint=spec.req("entrypoint", str),
+        entrypoints=entrypoints,
         signature=spec.req("signature", str),
         directory=directory,
         setup_sql=(directory / "setup.sql").read_text(encoding="utf-8"),
@@ -156,6 +173,32 @@ def load_task(directory: Path | str) -> Task:
 
 def all_tasks() -> list[Task]:
     return [load_task(d) for d in sorted(TASKS_DIR.iterdir()) if (d / "spec.yaml").is_file()]
+
+
+def _entrypoints(spec: _Fields, where: str) -> tuple[str, ...]:
+    """`entrypoint: name` (one function) or `entrypoints: [a, b, ...]` (several), not both."""
+    single = spec.opt("entrypoint", str, None)
+    many = spec.opt("entrypoints", list, None)
+    if (single is None) == (many is None):
+        raise TaskSpecError(f"{where}: give exactly one of 'entrypoint' or 'entrypoints'")
+    names = (single,) if single is not None else tuple(many)
+    if not names or not all(isinstance(n, str) and n.isidentifier() for n in names) or len(set(names)) != len(names):
+        raise TaskSpecError(f"{where}: entrypoints must be distinct Python identifiers, got {names!r}")
+    return names
+
+
+def _call(raw: dict[str, Any], entrypoints: tuple[str, ...], ctx: str) -> Call:
+    """`{fn: name, args: {...}}`, or a bare argument mapping when the task has one entrypoint."""
+    if "fn" in raw or "args" in raw:
+        f = _Fields(raw, ctx)
+        fn, args = f.req("fn", str), f.opt("args", dict, {})
+        f.done()
+        if fn not in entrypoints:
+            raise TaskSpecError(f"{ctx}: fn {fn!r} is not one of the entrypoints {list(entrypoints)}")
+        return Call(fn, dict(args))
+    if len(entrypoints) > 1:
+        raise TaskSpecError(f"{ctx}: this task has several entrypoints; write the call as {{fn: ..., args: {{...}}}}")
+    return Call(entrypoints[0], dict(raw))
 
 
 def _invariant(raw: Any, ctx: str, kind: str = "safety") -> Invariant:

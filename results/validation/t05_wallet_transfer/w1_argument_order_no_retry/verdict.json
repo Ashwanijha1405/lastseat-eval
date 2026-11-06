@@ -46,7 +46,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.59
+      "seconds": 0.75
     },
     {
       "name": "opposite transfers between two accounts",
@@ -65,7 +65,7 @@
         "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 AND balance >= 30 RETURNING id -> UPDATE 1 [(1,)]\nstep 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R2  UPDATE accounts SET balance = balance - 20 WHERE id = 2 AND balance >= 20 RETURNING id -> UPDATE 1 [(2,)]\nstep 5   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> blocked (waiting for R2)\nstep 6   R2  UPDATE accounts SET balance = balance + 20 WHERE id = 1 -> UPDATE 1\n         R1  step 5 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised DeadlockDetected (40P01): deadlock detected\nstep 7   R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 1, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 AND balance >= 30 RETURNING id -> UPDATE 1 [(1,)]\nstep 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R2  UPDATE accounts SET balance = balance - 20 WHERE id = 2 AND balance >= 20 RETURNING id -> UPDATE 1 [(2,)]\nstep 5   R2  UPDATE accounts SET balance = balance + 20 WHERE id = 1 -> blocked (waiting for R1)\nstep 6   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\n         R2  step 5 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised DeadlockDetected (40P01): deadlock detected\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
       ],
-      "seconds": 2.42
+      "seconds": 2.64
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -81,7 +81,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.65
+      "seconds": 0.96
     }
   ],
   "scores": {
@@ -90,7 +90,8 @@
     "liveness": 0.0,
     "total": 0.75
   },
+  "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 3.9
+  "seconds": 4.58
 }

@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.41
+      "seconds": 1.46
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -59,7 +59,7 @@
         "scenario: two drains of nodes sharing several shards, both fit\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  UPDATE replicas SET active = false WHERE node_id = 'A' AND active RETURNING shard_id -> UPDATE 2 [(1,), (2,)]\nstep 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R2  UPDATE replicas SET active = false WHERE node_id = 'B' AND active RETURNING shard_id -> UPDATE 2 [(2,), (1,)]\nstep 5   R1  SELECT shard_id FROM replicas WHERE shard_id = ANY('{1,2}'::int2[]) AND node_id <> 'A' AND active FOR UPDATE -> blocked (waiting for R2)\nstep 6   R2  SELECT shard_id FROM replicas WHERE shard_id = ANY('{2,1}'::int2[]) AND node_id <> 'B' AND active FOR UPDATE -> [(1,), (2,), (1,), (2,)]\n         R1  step 5 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised DeadlockDetected (40P01): deadlock detected\nstep 7   R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: two drains of nodes sharing several shards, both fit\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 1, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  UPDATE replicas SET active = false WHERE node_id = 'A' AND active RETURNING shard_id -> UPDATE 2 [(1,), (2,)]\nstep 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R2  UPDATE replicas SET active = false WHERE node_id = 'B' AND active RETURNING shard_id -> UPDATE 2 [(2,), (1,)]\nstep 5   R2  SELECT shard_id FROM replicas WHERE shard_id = ANY('{2,1}'::int2[]) AND node_id <> 'B' AND active FOR UPDATE -> blocked (waiting for R1)\nstep 6   R1  SELECT shard_id FROM replicas WHERE shard_id = ANY('{1,2}'::int2[]) AND node_id <> 'A' AND active FOR UPDATE -> [(2,), (1,), (1,), (2,)]\n         R2  step 5 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised DeadlockDetected (40P01): deadlock detected\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
       ],
-      "seconds": 2.45
+      "seconds": 2.44
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -75,7 +75,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.69
+      "seconds": 1.86
     }
   ],
   "scores": {
@@ -84,7 +84,8 @@
     "liveness": 0.0,
     "total": 0.75
   },
+  "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 5.73
+  "seconds": 5.96
 }

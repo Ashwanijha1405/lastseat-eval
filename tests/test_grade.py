@@ -1,0 +1,130 @@
+"""Grader scoring rules that are not exercised by the task validation suite."""
+
+from lastseat.grade import VACUOUS_SAFETY, grade
+from lastseat.task import TASKS_DIR, load_task
+
+T01 = load_task(TASKS_DIR / "t01_flash_sale")
+
+# Every call raises: nothing ever changes, so no schedule can break an invariant.
+ALWAYS_RAISES = '''
+def purchase(db, product_id, qty):
+    db.begin("read committed")
+    db.execute("SELECT no_such_column FROM products")
+'''
+
+# Always refuses: passes the "refused cleanly" solo check but never sells anything.
+ALWAYS_REFUSES = '''
+def purchase(db, product_id, qty):
+    return False
+'''
+
+
+def test_code_that_never_succeeds_gets_no_safety_credit():
+    v = grade(T01, ALWAYS_RAISES)
+    assert all(s.safe for s in v.scenarios), "the scheduler itself still sees no unsafe schedule"
+    assert v.scores == {"safety": 0.0, "solo": 0.0, "liveness": 0.0, "total": 0.0}
+    assert v.safety_reason == VACUOUS_SAFETY
+
+
+def test_passing_only_refusal_checks_is_still_vacuous():
+    v = grade(T01, ALWAYS_REFUSES)
+    assert any(s.passed for s in v.solo), "it does pass the refusal check"
+    assert v.scores["safety"] == 0.0 and v.safety_reason == VACUOUS_SAFETY
+
+
+def test_reference_keeps_its_safety_credit():
+    v = grade(T01, T01.reference_path.read_text(encoding="utf-8"))
+    assert v.scores["safety"] == 0.5 and v.safety_reason is None and v.passed
+
+
+# --- several entrypoints: each request names the function it calls ------------
+
+TWO_FN_SPEC = """\
+id: t99_two_fns
+title: Account with deposit and withdraw
+entrypoints: [deposit, withdraw]
+signature: "deposit(db, k: int) -> bool; withdraw(db, k: int) -> bool"
+seed_state_sql: INSERT INTO account VALUES (1, 3);
+invariants:
+  - name: balance never negative
+    sql: SELECT bool_and(n >= 0) FROM account
+solo_checks:
+  - name: deposit adds
+    call: {fn: deposit, args: {k: 5}}
+    expect_return: true
+    expect_sql: SELECT n = 8 FROM account
+  - name: withdraw over balance is refused
+    call: {fn: withdraw, args: {k: 4}}
+    expect_return: false
+    expect_sql: SELECT n = 3 FROM account
+concurrent_scenarios:
+  - name: deposit and withdraw at once
+    requests:
+      - {fn: deposit, args: {k: 5}}
+      - {fn: withdraw, args: {k: 2}}
+    must_all_succeed: false
+    invariants:
+      - name: no update lost
+        sql: SELECT n = 3 + 5 - (CASE WHEN %(r2)s THEN 2 ELSE 0 END) FROM account
+"""
+
+SETUP = "CREATE TABLE account (id int PRIMARY KEY, n int NOT NULL);\n"
+
+DEPOSIT = '''
+def deposit(db, k):
+    db.begin("read committed")
+    db.execute("UPDATE account SET n = n + %s WHERE id = 1", (k,))
+    db.commit()
+    return True
+'''
+SAFE_WITHDRAW = '''
+def withdraw(db, k):
+    db.begin("read committed")
+    rows = db.execute("UPDATE account SET n = n - %s WHERE id = 1 AND n >= %s RETURNING n", (k, k))
+    db.commit()
+    return bool(rows)
+'''
+# Reads, then writes an absolute value: a deposit committed in between is lost.
+RACY_WITHDRAW = '''
+def withdraw(db, k):
+    db.begin("read committed")
+    n = db.execute("SELECT n FROM account WHERE id = 1")[0][0]
+    if n < k:
+        db.commit()
+        return False
+    db.execute("UPDATE account SET n = %s WHERE id = 1", (n - k,))
+    db.commit()
+    return True
+'''
+
+
+def _two_fn_task(tmp_path):
+    d = tmp_path / "t99_two_fns"
+    d.mkdir()
+    (d / "spec.yaml").write_text(TWO_FN_SPEC, encoding="utf-8")
+    (d / "setup.sql").write_text(SETUP, encoding="utf-8")
+    (d / "task.md").write_text("Write deposit and withdraw.\n\n" + SETUP, encoding="utf-8")
+    return load_task(d)
+
+
+def test_requests_can_call_different_functions(tmp_path):
+    task = _two_fn_task(tmp_path)
+    v = grade(task, DEPOSIT + SAFE_WITHDRAW)
+    assert v.passed, v
+    assert [str(c.call) for c in task.solo_checks] == ["deposit(db, k=5)", "withdraw(db, k=4)"]
+    # More than one schedule: the scheduler really interleaves the two functions.
+    assert v.scenarios[0].schedules > 1
+
+
+def test_a_race_between_two_different_functions_is_caught(tmp_path):
+    task = _two_fn_task(tmp_path)
+    v = grade(task, DEPOSIT + RACY_WITHDRAW)
+    assert [s.passed for s in v.solo] == [True, True], "each function is fine on its own"
+    assert v.scores["safety"] == 0.0 and v.safety_reason is None
+    trace = v.scenarios[0].counterexamples[0]
+    assert "R1: deposit(db, k=5)\nR2: withdraw(db, k=2)\n" in trace and "no update lost" in trace
+
+
+def test_a_missing_second_function_is_a_load_error(tmp_path):
+    v = grade(_two_fn_task(tmp_path), DEPOSIT)
+    assert v.status == "load_error" and v.load_error == "missing_entrypoint" and "'withdraw'" in v.load_detail

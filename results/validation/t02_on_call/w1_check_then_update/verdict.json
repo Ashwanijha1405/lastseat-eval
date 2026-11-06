@@ -58,7 +58,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.73
+      "seconds": 1.94
     },
     {
       "name": "one leaves from each of two shifts",
@@ -74,7 +74,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.7
+      "seconds": 1.78
     }
   ],
   "scores": {
@@ -83,7 +83,8 @@
     "liveness": 0.25,
     "total": 0.5
   },
+  "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 7.13
+  "seconds": 7.45
 }

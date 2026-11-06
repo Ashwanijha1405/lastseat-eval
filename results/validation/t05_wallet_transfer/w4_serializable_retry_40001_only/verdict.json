@@ -46,7 +46,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.35
+      "seconds": 2.53
     },
     {
       "name": "opposite transfers between two accounts",
@@ -81,7 +81,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.88
+      "seconds": 2.57
     }
   ],
   "scores": {
@@ -90,7 +90,8 @@
     "liveness": 0.0,
     "total": 0.75
   },
+  "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 14.28
+  "seconds": 14.18
 }

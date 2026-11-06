@@ -52,7 +52,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.43
+      "seconds": 0.55
     },
     {
       "name": "back-to-back requests for the same room",
@@ -71,7 +71,7 @@
         "scenario: back-to-back requests for the same room\nR1: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 3   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 11:00:00+00:00'::timestamptz, '2026-11-09 12:00:00+00:00'::timestamptz) -> ERROR 23P01 ExclusionViolation: conflicting key value violates exclusion constraint \"bookings_no_overlap\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  returned False\ninvariant ok: no two bookings of the same room overlap\nSUCCESS CHECK FAILED: both bookings exist  (got [(False,)])\nreproduced on re-run: True\n",
         "scenario: back-to-back requests for the same room\nR1: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 3   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 11:00:00+00:00'::timestamptz, '2026-11-09 12:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 4   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> blocked (waiting for R2)\nstep 5   R2  COMMIT -> COMMIT\n         R2  returned True\n         R1  step 4 resumed -> ERROR 23P01 ExclusionViolation: conflicting key value violates exclusion constraint \"bookings_no_overlap\"\nstep 6   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no two bookings of the same room overlap\nSUCCESS CHECK FAILED: both bookings exist  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 0.76
+      "seconds": 1.05
     },
     {
       "name": "same time in two different rooms",
@@ -87,7 +87,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.54
+      "seconds": 0.67
     }
   ],
   "scores": {
@@ -96,7 +96,8 @@
     "liveness": 0.0,
     "total": 0.5
   },
+  "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 2.08
+  "seconds": 2.79
 }

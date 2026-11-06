@@ -182,8 +182,29 @@ concurrent_scenarios:
     must_all_succeed: true      # liveness: both must return true in EVERY schedule (no 500s)
 ```
 
+**Several functions per task** (added 2026-11-06). Instead of `entrypoint`, a task
+may list `entrypoints: [approve_expense, edit_expense, change_budget]`; the model
+must define all of them. Every `call` and every request then names its function:
+
+```yaml
+    requests:
+      - {fn: approve_expense, args: {expense_id: 1}}
+      - {fn: edit_expense, args: {expense_id: 2, new_amount: 400}}
+```
+
+The `{fn, args}` form also works in single-entrypoint tasks; the bare argument
+mapping is only allowed when there is exactly one entrypoint. `success_means`
+applies to every function of the task.
+
 ### 6.1 Scoring per task (per trial)
-- **Safety (0.5):** all invariants hold in every explored schedule of every concurrent scenario.
+- **Safety (0.5):** all invariants hold in every explored schedule of every concurrent scenario,
+  **and** at least one solo check that expects the operation to succeed passed
+  (`expect_return: true`; with `success_means: returns`, any solo check).
+  Otherwise safety is 0 and `verdict.json` records `"safety_reason": "vacuous_safety"`.
+  *Why (added 2026-11-06 after the free pilot):* code that never performs the
+  operation (Nemotron's t07 raised a syntax error on every call) cannot break an
+  invariant, and was scored 0.5 for doing nothing. Per-scenario `safe` flags
+  still report what the scheduler observed; only the score changes.
 - **Solo correctness (0.25):** all solo checks pass.
 - **Liveness (0.25):** in scenarios with `must_all_succeed: true`, every request returns `True` in every schedule (no exception escapes, no `STEP_LIMIT`).
 - **Task PASS** = all three fully satisfied. Partial score reported separately.

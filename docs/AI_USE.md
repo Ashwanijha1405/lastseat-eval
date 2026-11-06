@@ -418,3 +418,39 @@ The paid path stays working behind `--config paid`.
 - Policy: any 4xx stops the whole run without a verdict. A model that always
   rejects one prompt would block resume until handled by hand.
 - Two runs at once would race on the quota file (not locked).
+
+## Pilot review fixes: vacuous safety, several entrypoints per task
+
+**Claude drafted**
+- Grader (`lastseat/grade.py`): safety is 0, with `safety_reason:
+  "vacuous_safety"`, unless at least one solo check that expects the
+  operation to succeed passed (`Task.expects_success`: `expect_return: true`,
+  or any check when `success_means: returns`). The human chose this over the
+  literal "solo score 0" rule, which would also have zeroed safety for two
+  genuinely safe wrong variants that fail one edge case (t04 w5, t06 w2).
+  `validate.py` policy: every task needs such a solo check. SPEC §6.1 updated.
+- Harness: `entrypoints: [a, b, ...]` in spec.yaml, and `{fn, args}` calls in
+  solo checks and concurrent requests (`task.Call`). Single-entrypoint tasks
+  keep their bare argument mappings. The sandbox loads every named function;
+  a missing one is `missing_entrypoint`. Traces print `R1: fn(db, ...)`.
+  SPEC §6 updated. The shared contract is unchanged (so t01-t07 prompts stay
+  identical across the pilot); a multi-function task says in its task.md that
+  every function must be defined and that they run concurrently.
+- Tests: `tests/test_grade.py` (vacuous safety; a two-function toy task where
+  each function is right alone but a deposit/withdraw race breaks safety);
+  spec-format tests in `tests/test_task.py`.
+
+**Verified by Claude**
+- Without the rule, 2 vacuous-safety tests fail; with fn dispatch broken
+  (always the first function), 2 multi-function tests fail.
+- Pilot re-graded from disk (no API calls): only nemotron t07 changed,
+  0.50 -> 0.00 (`vacuous_safety`). Previous verdicts kept as
+  `verdict.prev.json`.
+
+**Human to review**
+- `grade.py`: the rule runs after the component scores, and only flips
+  safety (the scheduler's per-scenario `safe` flags are untouched).
+- `task.py` `_call`: a bare argument mapping is allowed only when the task
+  has one entrypoint; check you agree with that restriction.
+- `results/validation/`: all t01-t07 verdicts were regenerated (they now
+  carry `safety_reason`); the 36 EXPECT outcomes are unchanged.

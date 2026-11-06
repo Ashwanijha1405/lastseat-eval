@@ -29,11 +29,12 @@ from .scheduler import (
     drop_database,
     ensure_role,
 )
-from .task import ANY_RETURN, Scenario, SoloCheck, Task, load_task
+from .task import ANY_RETURN, Call, Scenario, SoloCheck, Task, load_task
 
 APP_ROLE = "lastseat_app"
 MAX_COUNTEREXAMPLES = 3
 SCORE_WEIGHTS = {"safety": 0.5, "solo": 0.25, "liveness": 0.25}
+VACUOUS_SAFETY = "vacuous_safety"
 
 
 @dataclass
@@ -73,6 +74,7 @@ class Verdict:
     solo: list[SoloResult] = field(default_factory=list)
     scenarios: list[ScenarioResult] = field(default_factory=list)
     scores: dict[str, float] = field(default_factory=lambda: {**dict.fromkeys(SCORE_WEIGHTS, 0.0), "total": 0.0})
+    safety_reason: str | None = None  # "vacuous_safety" when safety is zeroed for never succeeding
     passed: bool = False
     reproducible: bool = True
     seconds: float = 0.0
@@ -86,7 +88,7 @@ def grade(task: Task, source: str, *, solution_label: str = "solution.py", conni
     started = time.monotonic()
     verdict = Verdict(task.id, solution_label, "graded")
     try:
-        solution = load_solution(source, task.entrypoint)
+        solution = load_solution(source, task.entrypoints)
     except LoadError as e:
         verdict.status, verdict.load_error, verdict.load_detail = "load_error", e.reason, e.detail
         return verdict
@@ -116,6 +118,13 @@ def grade(task: Task, source: str, *, solution_label: str = "solution.py", conni
         "solo": all(s.passed for s in verdict.solo),
         "liveness": all(s.live for s in verdict.scenarios),
     }
+    # Code that never performs the operation (e.g. every call raises) cannot break
+    # an invariant, so "no unsafe schedule" proves nothing about it. Safety only
+    # counts once at least one solo check that expects success has passed.
+    if components["safety"] and not any(r.passed for r, c in zip(verdict.solo, task.solo_checks)
+                                         if task.expects_success(c)):
+        components["safety"] = False
+        verdict.safety_reason = VACUOUS_SAFETY
     verdict.scores = {k: SCORE_WEIGHTS[k] if ok else 0.0 for k, ok in components.items()}
     verdict.scores["total"] = sum(verdict.scores.values())
     verdict.passed = all(components.values())
@@ -136,8 +145,9 @@ def _build(task: Task, solution: Solution, name: str, seed_sql: str, conninfo: s
         raise _MigrateError(f"{type(e).__name__}: {e}") from None
 
 
-def _call(solution: Solution, kwargs: dict[str, Any]):
-    return lambda db: solution.entrypoint(db, **kwargs)
+def _call(solution: Solution, call: Call):
+    fn = solution.functions[call.fn]
+    return lambda db: fn(db, **call.args)
 
 
 def _solo(task: Task, solution: Solution, check: SoloCheck, name: str, conninfo: str) -> SoloResult:
@@ -160,7 +170,7 @@ def _solo(task: Task, solution: Solution, check: SoloCheck, name: str, conninfo:
     elif check.expect_return is not ANY_RETURN and not _same_value(outcome.value, check.expect_return):
         reasons.append(f"returned {outcome.value!r}, expected {check.expect_return!r}")
     reasons += [f"violated: {i.name} (got {i.got})" for i in r.invariants if not i.holds]
-    header = f"solo check: {check.name}\ncall: {_signature(task, check.call)}\n"
+    header = f"solo check: {check.name}\ncall: {check.call}\n"
     return SoloResult(check.name, not reasons, "; ".join(reasons), header + r.trace())
 
 
@@ -185,7 +195,7 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
         return not succeeded or not r.success_holds
 
     _build(task, solution, name, sc.seed_sql, conninfo)
-    requests = [_call(solution, kwargs) for kwargs in sc.requests]
+    requests = [_call(solution, call) for call in sc.requests]
     try:
         with Explorer(name, requests, sc.invariants, role=APP_ROLE, conninfo=conninfo) as ex:
             exp = ex.explore(max_schedules=max_schedules, random_schedules=random_schedules, seed=seed,
@@ -193,9 +203,7 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
     finally:
         drop_database(name, conninfo)
 
-    header = f"scenario: {sc.name}\n" + "".join(
-        f"R{i + 1}: {_signature(task, kw)}\n" for i, kw in enumerate(sc.requests)
-    )
+    header = f"scenario: {sc.name}\n" + "".join(f"R{i + 1}: {call}\n" for i, call in enumerate(sc.requests))
     stopped = exp.harness_error
     if stopped is not None:
         # Exploration stopped early (model_hang, or a harness error the caller
@@ -237,11 +245,6 @@ def _distinct(exp: Exploration) -> list[ScheduleResult]:
             seen.add(pattern)
             picked.append(r)
     return picked[:MAX_COUNTEREXAMPLES]
-
-
-def _signature(task: Task, kwargs: dict[str, Any]) -> str:
-    args = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
-    return f"{task.entrypoint}(db, {args})"
 
 
 def write_outputs(verdict: Verdict, out: Path) -> None:

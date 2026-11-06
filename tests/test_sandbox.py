@@ -8,7 +8,7 @@ from lastseat.task import all_tasks
 
 def reason(source: str, entrypoint: str = "f") -> str:
     with pytest.raises(LoadError) as e:
-        load_solution(source, entrypoint)
+        load_solution(source, (entrypoint,))
     return e.value.reason
 
 
@@ -26,8 +26,8 @@ def reason(source: str, entrypoint: str = "f") -> str:
     ],
 )
 def test_allowed_imports_load(line):
-    solution = load_solution(f"{line}\ndef f(db):\n    return True\n", "f")
-    assert solution.entrypoint(None) is True
+    solution = load_solution(f"{line}\ndef f(db):\n    return True\n", ("f",))
+    assert solution.functions["f"](None) is True
 
 
 @pytest.mark.parametrize(
@@ -43,18 +43,18 @@ def test_psycopg_exposes_only_exception_classes():
         "import psycopg\n"
         "def f(db):\n"
         "    return psycopg.errors.SerializationFailure, psycopg.Error, hasattr(psycopg, 'connect')\n",
-        "f",
+        ("f",),
     )
-    failure, base, can_connect = solution.entrypoint(None)
+    failure, base, can_connect = solution.functions["f"](None)
     assert failure.sqlstate == "40001"
     assert issubclass(failure, base)
     assert not can_connect
 
 
 def test_dynamic_import_is_blocked_at_runtime():
-    solution = load_solution("def f(db):\n    return __import__('os')\n", "f")
+    solution = load_solution("def f(db):\n    return __import__('os')\n", ("f",))
     with pytest.raises(ImportError):
-        solution.entrypoint(None)
+        solution.functions["f"](None)
 
 
 def test_file_access_is_removed():
@@ -67,11 +67,11 @@ def test_syntax_error_and_missing_function():
 
 
 def test_migrate_is_optional():
-    assert load_solution("def f(db): pass\n", "f").migrate is None
-    assert load_solution("def f(db): pass\ndef migrate(db): pass\n", "f").migrate is not None
+    assert load_solution("def f(db): pass\n", ("f",)).migrate is None
+    assert load_solution("def f(db): pass\ndef migrate(db): pass\n", ("f",)).migrate is not None
 
 
 def test_every_task_solution_loads():
     for task in all_tasks():
         for path in [task.reference_path, *task.wrong_paths]:
-            load_solution(path.read_text(encoding="utf-8"), task.entrypoint)
+            load_solution(path.read_text(encoding="utf-8"), task.entrypoints)

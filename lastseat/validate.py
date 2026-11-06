@@ -45,6 +45,8 @@ def policy_problems(task: Task) -> list[str]:
     problems = []
     if len(task.solo_checks) < 2:
         problems.append("needs >= 2 solo checks (success path + clean refusal)")
+    if not any(task.expects_success(c) for c in task.solo_checks):
+        problems.append("needs a solo check that expects success (else safety is always vacuous)")
     if not any(s.must_all_succeed for s in task.scenarios):
         problems.append("needs a concurrent scenario with must_all_succeed: true")
     if not any(not s.must_all_succeed for s in task.scenarios):

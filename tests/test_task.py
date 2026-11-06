@@ -10,7 +10,8 @@ from lastseat.task import TASKS_DIR, TaskSpecError, load_task
 def test_t01_loads():
     task = load_task(TASKS_DIR / "t01_flash_sale")
 
-    assert task.entrypoint == "purchase"
+    assert task.entrypoints == ("purchase",)
+    assert str(task.solo_checks[0].call).startswith("purchase(db, ")
     assert len(task.solo_checks) == 3
     assert [s.must_all_succeed for s in task.scenarios] == [False, True]
     # task-wide invariants come first, then the scenario's own
@@ -27,7 +28,12 @@ def test_t01_loads():
         ("expect_sql: SELECT stock = 2 AND NOT", "expect_sqll: SELECT stock = 2 AND NOT", "unknown key"),
         ("must_all_succeed: true", "must_all_succed: true", "missing required key 'must_all_succeed'"),
         ("must_all_succeed: true", "must_all_succeed: yes please", "must be bool"),
-        ("entrypoint: purchase\n", "", "missing required key 'entrypoint'"),
+        ("entrypoint: purchase\n", "", "exactly one of 'entrypoint' or 'entrypoints'"),
+        ("entrypoint: purchase\n", "entrypoint: purchase\nentrypoints: [purchase, refund]\n",
+         "exactly one of 'entrypoint' or 'entrypoints'"),
+        ("entrypoint: purchase\n", "entrypoints: [purchase, refund]\n", "write the call as {fn: ..., args:"),
+        ("    call: {product_id: 1, qty: 3}", "    call: {fn: refund, args: {product_id: 1, qty: 3}}",
+         "fn 'refund' is not one of the entrypoints"),
         ("id: t01_flash_sale", "id: t99_other", "does not match directory"),
     ],
 )

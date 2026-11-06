@@ -32,7 +32,7 @@ _REMOVED_BUILTINS = frozenset({"open", "exec", "eval", "compile", "input", "brea
 
 @dataclass(frozen=True)
 class Solution:
-    entrypoint: Callable[..., Any]
+    functions: dict[str, Callable[..., Any]]  # every entrypoint the task names
     migrate: Callable[[Any], Any] | None
 
 
@@ -45,7 +45,7 @@ class LoadError(Exception):
         self.detail = detail
 
 
-def load_solution(source: str, entrypoint: str) -> Solution:
+def load_solution(source: str, entrypoints: tuple[str, ...]) -> Solution:
     try:
         tree = ast.parse(source, filename="solution.py")
     except SyntaxError as e:
@@ -61,11 +61,11 @@ def load_solution(source: str, entrypoint: str) -> Solution:
     except Exception as e:
         raise LoadError("exec_error", f"{type(e).__name__}: {e}") from None
 
-    entry = namespace.get(entrypoint)
-    if not callable(entry):
-        raise LoadError("missing_entrypoint", f"no function named {entrypoint!r}")
+    missing = [name for name in entrypoints if not callable(namespace.get(name))]
+    if missing:
+        raise LoadError("missing_entrypoint", "no function named " + ", ".join(repr(n) for n in missing))
     migrate = namespace.get("migrate")
-    return Solution(entry, migrate if callable(migrate) else None)
+    return Solution({name: namespace[name] for name in entrypoints}, migrate if callable(migrate) else None)
 
 
 def _forbidden_imports(tree: ast.AST) -> set[str]:
