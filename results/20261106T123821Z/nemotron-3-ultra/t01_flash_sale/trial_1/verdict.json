@@ -1,6 +1,6 @@
 {
   "task_id": "t01_flash_sale",
-  "solution": "/app/results/20261106T123821Z/nemotron-3-ultra/t01_flash_sale/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/nemotron-3-ultra/t01_flash_sale/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -56,7 +56,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.72
+      "seconds": 0.7
     }
   ],
   "scores": {
@@ -68,7 +68,8 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 1.64,
+  "seconds": 1.66,
+  "failure_category": null,
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",

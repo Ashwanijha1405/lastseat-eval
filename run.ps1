@@ -17,7 +17,8 @@ param(
     [string]$From,
     [int]$Jobs = 0,
     [string[]]$Task,
-    [string[]]$Model
+    [string[]]$Model,
+    [switch]$Regrade
 )
 # No $ErrorActionPreference = "Stop": in Windows PowerShell 5.1 it turns docker's
 # ordinary stderr progress lines into fatal errors. Exit codes are checked instead.
@@ -54,6 +55,7 @@ switch ($Command) {
             ".\run.ps1 models [-Config paid]             live IDs and prices of a model set",
             ".\run.ps1 free-models                       every zero-priced :free model",
             ".\run.ps1 quota                             free-model requests used / left today",
+            ".\run.ps1 summary -Run <run_id> [-Regrade]   write results/<run_id>/summary.md (-Regrade: no API)",
             ".\run.ps1 dry-run                           mock model returning the references, no API",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
@@ -75,6 +77,13 @@ switch ($Command) {
     "models" { Invoke-Eval @("python", "-m", "lastseat.runner", "models", "--config", $Config) }
     "free-models" { Invoke-Eval @("python", "-m", "lastseat.runner", "models", "--list-free") }
     "quota" { Invoke-Eval @("python", "-m", "lastseat.runner", "quota", "--config", $Config) }
+    "summary" {
+        if (-not $Run) { Write-Output "summary needs -Run <run_id>"; exit 2 }
+        Start-Db
+        $a = @("python", "-m", "lastseat.summary", "results/$Run")
+        if ($Regrade) { $a += "--regrade" }
+        Invoke-Eval $a
+    }
     "dry-run" { Start-Db; Invoke-Eval ((Get-RunnerArgs 1) + "--dry-run") }
     "pilot" { Start-Db; Invoke-Eval (Get-RunnerArgs 1) }
     "run" { Start-Db; Invoke-Eval (Get-RunnerArgs 5) }

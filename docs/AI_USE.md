@@ -515,3 +515,66 @@ Keep w4 and "in any order".
 
 **Human to review**
 - The new task.md sentence and the w5 docstring.
+
+## t09 room rules (2026-11-07, Claude Code / Claude Opus 5.5)
+
+**Claude drafted**
+- `tasks/t09_room_rules/`: `book`, `reschedule`, `cancel` on t04's schema.
+  Rules: no overlap per room (half-open), at most 3 bookings per room per UTC
+  day. 14 solo checks (incl. a +05:30 offset that lands on a full UTC day,
+  moving within a full day, overlapping your own old slot, missing ids);
+  5 safety scenarios, 3 `must_all_succeed` (incl. opposite cross-day moves).
+  `migrate()` allowed (exclusion constraint is a legitimate, expected part).
+- Reference: `pg_advisory_xact_lock(room, UTC day)` on the day a booking
+  joins, then both checks in a new statement. Moving out / cancel take no lock.
+- Wrong variants: w1 exclusion constraint only (count unprotected); w2 both
+  checks inside one INSERT/UPDATE statement; w3 reschedule locks old day then
+  new day (deadlock, not retried); w4 constraint + FOR UPDATE on the day's rows.
+
+**Verified by Claude**
+- `validate t09`: reference ok (all exhaustive); w1 safety; w2 safety;
+  w3 liveness; w4 safety + liveness. w4 was first written as safety-only; the
+  validation also found deadlocks, so its EXPECT and docstring now say both
+  (variant code unchanged, no grader change).
+- task.md grep for lock/race/concurrency/skew/isolation/deadlock/retry/
+  constraint/exclusion: no hits.
+
+**Human to review**
+- Business rules: reschedule may overlap its own old slot and does not count
+  against itself; "day" = UTC date of starts_at; no booking crosses midnight.
+- The advisory lock as the reference (vs. e.g. a lock row per room-day).
+- w4 failing two components.
+
+## Build order seed -> migrate, failure categories (2026-11-07, Claude Code / Claude Opus 5.5)
+
+**Human decided**: t09 approved as drafted. migrate() now runs after the seed
+rows (like a production migration); the shared contract says so; each failed
+cell gets a failure category (concurrency / spec / load).
+
+**Claude drafted**
+- `scheduler.build_template`: setup.sql -> seed -> migrate. A failure inside
+  migrate() raises `MigrateFailed` (-> `migrate_error`); a setup/seed failure is
+  no longer mislabelled `migrate_error` and surfaces as a harness error.
+- Contract (`lastseat/prompts/contract.md`): the human's sentence replaces "on an
+  empty database ... before any data is inserted". This changes every task's
+  prompt from the pilot's (one sentence).
+- `grade.failure_category` (also in verdict.json): load > concurrency (a real
+  unsafe schedule) > spec (a solo check failed) > concurrency (liveness only);
+  harness for grader failures. Runner's `no_code` verdict carries `load`.
+- `lastseat/summary.py` (`make summary RUN=..`, `.\run.ps1 summary -Run ..`),
+  moved from Claude's scratch scripts into the repo: summary.md with the
+  category per cell, optional `--regrade` from disk (keeps the first
+  verdict.prev.json).
+- Tests: migrate backfilling a counter table sees the seeded rows; a constraint
+  the existing rows break is a `MigrateFailed`; category unit tests.
+
+**Verified by Claude**
+- Old order restored: the 2 build-order tests fail; new order: all pass.
+- Before the change: every migrate() in the repo and the pilot only adds a
+  constraint (EXCLUDE / UNIQUE), an index, or nothing (t08 w5 never runs). A
+  constraint is checked against existing rows when added, so seed-then-migrate
+  accepts and rejects exactly what migrate-then-seed did: no verdict should change.
+
+**Human to review**
+- The category precedence (a real counterexample beats a solo failure; a solo
+  failure beats liveness-only, so "every call raises" is spec, not concurrency).

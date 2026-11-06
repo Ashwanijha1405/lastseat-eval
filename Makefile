@@ -6,7 +6,7 @@ COMPOSE := docker compose
 EVAL := $(COMPOSE) run --rm eval
 RUN_ARGS = $(if $(CONFIG),--config $(CONFIG)) $(if $(YES),--yes) $(if $(NEW),--new) $(if $(RUN),--run-id $(RUN)) $(if $(FROM),--estimate-from $(FROM)) $(if $(JOBS),--jobs $(JOBS))
 
-.PHONY: help up down build test validate models free-models quota dry-run pilot run psql shell
+.PHONY: help up down build test validate models free-models quota summary dry-run pilot run psql shell
 
 help:
 	@echo "make up     start Postgres 16.15 and wait until healthy"
@@ -17,6 +17,7 @@ help:
 	@echo "make models [CONFIG=paid]  live IDs and prices of a model set (default CONFIG=free; no key)"
 	@echo "make free-models  every zero-priced :free model in the live catalog"
 	@echo "make quota   free-model requests used / left today (local counter + OpenRouter's)"
+	@echo "make summary RUN=<run_id> [REGRADE=1]   write results/<run_id>/summary.md (REGRADE: re-grade from disk, no API)"
 	@echo "make dry-run  whole pipeline with a mock model that returns the references (\$$0)"
 	@echo "make pilot    1 trial per model and task; prints the estimate; add YES=1 to start"
 	@echo "make run      5 trials; options: CONFIG=free|paid (default free) YES=1 NEW=1 RUN=<id> FROM=<pilot id> JOBS=<n>"
@@ -46,6 +47,9 @@ free-models:
 
 quota:
 	$(EVAL) python -m lastseat.runner quota $(if $(CONFIG),--config $(CONFIG))
+
+summary: up
+	$(EVAL) python -m lastseat.summary results/$(RUN) $(if $(REGRADE),--regrade)
 
 dry-run: up
 	$(EVAL) python -m lastseat.runner run --trials 1 --dry-run $(RUN_ARGS)

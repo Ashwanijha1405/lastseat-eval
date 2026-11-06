@@ -1,6 +1,6 @@
 {
   "task_id": "t05_wallet_transfer",
-  "solution": "/app/results/20261106T123821Z/nemotron-3-ultra/t05_wallet_transfer/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/nemotron-3-ultra/t05_wallet_transfer/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -46,7 +46,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.63
+      "seconds": 0.61
     },
     {
       "name": "opposite transfers between two accounts",
@@ -62,7 +62,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.42
+      "seconds": 0.4
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -78,7 +78,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.42
+      "seconds": 0.39
     }
   ],
   "scores": {
@@ -90,7 +90,8 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 1.74,
+  "seconds": 1.66,
+  "failure_category": null,
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",

@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.39
+      "seconds": 0.38
     },
     {
       "name": "two attempts with the same key both get the payment id",
@@ -75,7 +75,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.53
+      "seconds": 0.61
     }
   ],
   "scores": {
@@ -87,5 +87,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 1.62
+  "seconds": 1.71,
+  "failure_category": "concurrency"
 }

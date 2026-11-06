@@ -1,6 +1,6 @@
 {
   "task_id": "t03_expense_budget",
-  "solution": "/app/results/20261106T123821Z/nemotron-3-ultra/t03_expense_budget/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/nemotron-3-ultra/t03_expense_budget/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -52,7 +52,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 7.51
+      "seconds": 6.78
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -68,7 +68,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 7.88
+      "seconds": 6.74
     },
     {
       "name": "two approvals that both fit",
@@ -84,7 +84,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 7.76
+      "seconds": 7.36
     },
     {
       "name": "approvals in two different departments",
@@ -100,7 +100,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 71.8
+      "seconds": 63.69
     }
   ],
   "scores": {
@@ -112,7 +112,8 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 95.29,
+  "seconds": 84.96,
+  "failure_category": null,
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",

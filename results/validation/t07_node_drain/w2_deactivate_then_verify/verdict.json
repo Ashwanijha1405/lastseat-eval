@@ -75,7 +75,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.86
+      "seconds": 1.74
     }
   ],
   "scores": {
@@ -87,5 +87,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 5.96
+  "seconds": 5.81,
+  "failure_category": "concurrency"
 }

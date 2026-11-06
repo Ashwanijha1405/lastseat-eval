@@ -144,3 +144,33 @@ def test_a_task_can_forbid_migrate_and_it_never_runs():
     assert T08.allow_migrate is False
     assert v.status == "load_error" and v.load_error == "forbidden_migrate"
     assert v.solo == [] and v.scenarios == [] and v.scores["total"] == 0.0
+
+
+# --- failure category per failed cell -------------------------------------------
+
+from lastseat.grade import failure_category  # noqa: E402
+
+SAFE = {"safe": True, "live": True}
+
+
+def graded(solo_ok=True, safe=True, live=True):
+    return {"status": "graded", "passed": False, "solo": [{"passed": solo_ok}],
+            "scenarios": [{"safe": safe, "live": live}, SAFE]}
+
+
+def test_failure_categories():
+    assert failure_category({"status": "graded", "passed": True}) is None
+    assert failure_category({"status": "load_error", "load_error": "forbidden_migrate"}) == "load"
+    assert failure_category({"status": "load_error", "load_error": "no_code"}) == "load"
+    assert failure_category({"status": "harness_error"}) == "harness"
+    assert failure_category(graded(safe=False)) == "concurrency"
+    assert failure_category(graded(solo_ok=False, safe=False)) == "concurrency", "a real counterexample wins"
+    assert failure_category(graded(solo_ok=False)) == "spec"
+    assert failure_category(graded(solo_ok=False, live=False)) == "spec", "e.g. every call raises"
+    assert failure_category(graded(live=False)) == "concurrency"
+
+
+def test_verdict_json_carries_the_category():
+    import json
+    v = grade(T01, ALWAYS_RAISES)
+    assert json.loads(v.to_json())["failure_category"] == "spec"

@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.67
+      "seconds": 0.86
     },
     {
       "name": "three on call, two ask to leave",
@@ -56,7 +56,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.71
+      "seconds": 0.76
     },
     {
       "name": "one leaves from each of two shifts",
@@ -72,7 +72,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.79
+      "seconds": 1.99
     }
   ],
   "scores": {
@@ -84,5 +84,6 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 3.35
+  "seconds": 3.86,
+  "failure_category": null
 }

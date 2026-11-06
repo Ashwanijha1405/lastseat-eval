@@ -1,6 +1,6 @@
 {
   "task_id": "t07_node_drain",
-  "solution": "/app/results/20261106T123821Z/nemotron-3-ultra/t07_node_drain/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/nemotron-3-ultra/t07_node_drain/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.55
+      "seconds": 0.49
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -58,7 +58,7 @@
       "counterexamples": [
         "scenario: two drains of nodes sharing several shards, both fit\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.06
+      "seconds": 1.03
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -76,7 +76,7 @@
       "counterexamples": [
         "scenario: two drains of nodes with no shared shard\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  WITH target_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT 1 FROM replicas r JOIN target_shards ts ON r.shard_id = ts.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.07
+      "seconds": 0.99
     }
   ],
   "scores": {
@@ -88,7 +88,8 @@
   "safety_reason": "vacuous_safety",
   "passed": false,
   "reproducible": true,
-  "seconds": 2.88,
+  "seconds": 2.7,
+  "failure_category": "spec",
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",

@@ -34,7 +34,7 @@ You may also define:
 def migrate(db) -> None: ...
 ```
 
-It runs once, alone, on an empty database after the schema below has been created and before any data is inserted. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
+migrate(db), if defined, runs once, alone, on a database that already contains the existing data for the scenario, before any request runs. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
 
 ## What you may import
 

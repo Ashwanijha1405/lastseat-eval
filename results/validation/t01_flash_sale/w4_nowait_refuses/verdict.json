@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.11
+      "seconds": 2.43
     },
     {
       "name": "two buyers, both fit",
@@ -59,7 +59,7 @@
         "scenario: two buyers, both fit\nR1: purchase(db, product_id=1, qty=3)\nR2: purchase(db, product_id=1, qty=3)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT stock FROM products WHERE id = 1 FOR UPDATE NOWAIT -> [(6,)]\nstep 3   R1  UPDATE products SET stock = 3 WHERE id = 1 -> UPDATE 1\nstep 4   R1  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT stock FROM products WHERE id = 1 FOR UPDATE NOWAIT -> ERROR 55P03 LockNotAvailable: could not obtain lock on row in relation \"products\"\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  ROLLBACK -> ROLLBACK\n         R2  returned False\ninvariant ok: stock never negative\ninvariant ok: stock is conserved (started at 6)\nreproduced on re-run: True\n",
         "scenario: two buyers, both fit\nR1: purchase(db, product_id=1, qty=3)\nR2: purchase(db, product_id=1, qty=3)\nschedule choices: [0, 1, 1, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 3   R2  SELECT stock FROM products WHERE id = 1 FOR UPDATE NOWAIT -> [(6,)]\nstep 4   R1  SELECT stock FROM products WHERE id = 1 FOR UPDATE NOWAIT -> ERROR 55P03 LockNotAvailable: could not obtain lock on row in relation \"products\"\nstep 5   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\nstep 6   R2  UPDATE products SET stock = 3 WHERE id = 1 -> UPDATE 1\nstep 7   R2  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: stock never negative\ninvariant ok: stock is conserved (started at 6)\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.84
+      "seconds": 4.19
     }
   ],
   "scores": {
@@ -71,5 +71,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 6.15
+  "seconds": 6.88,
+  "failure_category": "concurrency"
 }

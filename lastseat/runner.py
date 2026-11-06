@@ -544,7 +544,8 @@ def ask(client, job: Job, state: RunState, worst_case_usd: float) -> Path | None
     code = extract_code(reply.content)
     if code is None:
         _write_json(job.out / "verdict.json", {"task_id": job.task.id, "status": "load_error",
-                                               "load_error": "no_code", "passed": False,
+                                               "load_error": "no_code", "failure_category": "load",
+                                               "passed": False,
                                                "scores": {"safety": 0.0, "solo": 0.0, "liveness": 0.0, "total": 0.0},
                                                "api": api})
         return None

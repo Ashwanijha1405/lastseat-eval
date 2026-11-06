@@ -87,5 +87,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.74
+  "seconds": 0.71,
+  "failure_category": "spec"
 }

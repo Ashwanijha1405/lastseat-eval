@@ -54,7 +54,7 @@
       "counterexamples": [
         "scenario: two overlapping requests for the same room\nR1: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 30, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 1, 0]\nstep 1   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:00:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R2  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 10:30:00+00:00'::timestamptz, '2026-11-09 11:30:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 11:30:00+00:00'::timestamptz AND ends_at > '2026-11-09 10:30:00+00:00'::timestamptz) RETURNING id   [autocommit] -> INSERT 0 1 [(2,)]\nstep 3   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned True\nstep 4   R2  COMMIT   [autocommit] -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no two bookings of the same room overlap  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 0.31
+      "seconds": 0.28
     },
     {
       "name": "back-to-back requests for the same room",
@@ -70,7 +70,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.2
+      "seconds": 0.18
     },
     {
       "name": "same time in two different rooms",
@@ -86,7 +86,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.21
+      "seconds": 0.19
     }
   ],
   "scores": {
@@ -98,5 +98,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 1.03
+  "seconds": 0.98,
+  "failure_category": "concurrency"
 }

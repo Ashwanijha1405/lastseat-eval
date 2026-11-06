@@ -83,7 +83,7 @@ db.rollback()
 - Outside `begin()`…`commit()`, each `execute` auto-commits (connection runs in autocommit mode; `begin` issues an explicit `BEGIN ISOLATION LEVEL …`).
 - Database errors are raised as normal `psycopg.errors.*` exceptions (e.g. `SerializationFailure` = 40001, `DeadlockDetected` = 40P01, `UniqueViolation`, `ExclusionViolation`). Model code may catch them and retry.
 - If a function returns while a transaction is still open, the harness rolls it back and records a warning.
-- Optional: model may define `migrate(db)` — runs **once, alone**, after `setup.sql` and before seeding. Allowed: indexes, constraints, extensions (`btree_gist` is available), triggers, functions.
+- Optional: model may define `migrate(db)` — runs **once, alone**, after `setup.sql` and after the scenario's seed rows are inserted, before any request runs (changed 2026-11-07 from "before seeding": a real migration runs on a database that already holds data, so a constraint must accept the existing rows and a counter or summary table must be backfilled from them). Allowed: indexes, constraints, extensions (`btree_gist` is available), triggers, functions.
 - A task may fix the schema with `allow_migrate: false` in spec.yaml (added 2026-11-07; first used by t08). Its task.md then says "Do not define migrate()" (validate checks this), and a module that defines `migrate` is rejected at load time with reason `forbidden_migrate`, before anything runs. Why: some real changes must ship without a schema review, and a schema change (a running-total column with a CHECK, say) would sidestep the locking discipline the task is testing. A wrong variant can expect this with `EXPECT: load_error forbidden_migrate`.
 
 **Allowed imports in model code:** `psycopg.errors`, `datetime`, `decimal`, `typing`. Anything else ⇒ the solution is rejected with reason `forbidden_import`. No `time.sleep`, no threads, no network.
@@ -121,7 +121,7 @@ Per-request step limit (e.g. 60) ⇒ verdict `STEP_LIMIT` (counts as liveness fa
 - **Determinism check:** every failing schedule is re-run once from its choice sequence; record `reproduced: true/false`. Validation fails if any reference or wrong variant is non-reproducible.
 
 ### 5.6 Fast database reset
-- Per task build a **template database**: apply `setup.sql`, then the solution's `migrate(db)` if present, then seed rows for the scenario. Then `CREATE DATABASE run_<n> TEMPLATE tmpl_<...>` for each schedule and drop it afterwards.
+- Per task build a **template database**: apply `setup.sql`, then seed rows for the scenario, then the solution's `migrate(db)` if present. Then `CREATE DATABASE run_<n> TEMPLATE tmpl_<...>` for each schedule and drop it afterwards.
 - If template creation is too slow in practice, fall back to: drop + recreate schema, re-apply setup, migrate, seed. Measure and document which is used.
 
 ### 5.7 Trace format (this becomes our "transcripts" for judges)

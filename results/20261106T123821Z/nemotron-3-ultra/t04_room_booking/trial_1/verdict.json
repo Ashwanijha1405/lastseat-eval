@@ -1,6 +1,6 @@
 {
   "task_id": "t04_room_booking",
-  "solution": "/app/results/20261106T123821Z/nemotron-3-ultra/t04_room_booking/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/nemotron-3-ultra/t04_room_booking/trial_1/solution.py",
   "status": "load_error",
   "load_error": "migrate_error",
   "load_detail": "UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist\nLINE 1: ...ping_bookings EXCLUDE USING GIST (room_id WITH =, tsrange(st...\n                                                             ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.",
@@ -16,7 +16,8 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.08,
+  "seconds": 0.06,
+  "failure_category": "load",
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",

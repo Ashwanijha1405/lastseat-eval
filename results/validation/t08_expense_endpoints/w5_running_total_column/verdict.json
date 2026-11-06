@@ -16,5 +16,6 @@
   "safety_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.0
+  "seconds": 0.0,
+  "failure_category": "load"
 }

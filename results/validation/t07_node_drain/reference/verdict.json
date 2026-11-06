@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.03
+      "seconds": 1.0
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -56,7 +56,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.1
+      "seconds": 1.22
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -72,7 +72,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.64
+      "seconds": 6.61
     }
   ],
   "scores": {
@@ -84,5 +84,6 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 8.94
+  "seconds": 9.01,
+  "failure_category": null
 }

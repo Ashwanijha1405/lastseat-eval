@@ -24,6 +24,7 @@ from .scheduler import (
     Exploration,
     Explorer,
     Invariant,
+    MigrateFailed,
     ScheduleResult,
     build_template,
     drop_database,
@@ -80,7 +81,35 @@ class Verdict:
     seconds: float = 0.0
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2, default=repr)
+        d = asdict(self)
+        d["failure_category"] = failure_category(d)
+        return json.dumps(d, indent=2, default=repr)
+
+
+FAILURE_CATEGORIES = ("load", "concurrency", "spec", "harness")
+
+
+def failure_category(v: dict) -> str | None:
+    """One word for why a graded cell failed (None if it passed), from a verdict dict.
+
+    load: never graded (syntax, imports, missing function, migrate_error,
+    forbidden_migrate, no_code). concurrency: some schedule broke an invariant.
+    spec: no unsafe schedule, but a solo check failed (wrong when run alone, e.g.
+    the UTC-day check); this includes vacuous safety, since that needs a failed
+    success check. concurrency again: correct alone and safe, but a request that
+    fits failed in some schedule (liveness). harness: the grader itself failed.
+    """
+    if v.get("passed"):
+        return None
+    if v.get("status") == "load_error":
+        return "load"
+    if v.get("status") != "graded":
+        return "harness"
+    if any(not s.get("safe") for s in v.get("scenarios") or []):
+        return "concurrency"
+    if any(not c.get("passed") for c in v.get("solo") or []):
+        return "spec"
+    return "concurrency"
 
 
 def grade(task: Task, source: str, *, solution_label: str = "solution.py", conninfo: str = "",
@@ -140,9 +169,12 @@ def _build(task: Task, solution: Solution, name: str, seed_sql: str, conninfo: s
     try:
         build_template(name, task.setup_sql, seed_sql=seed_sql, migrate=solution.migrate,
                        role=APP_ROLE, conninfo=conninfo)
-    except Exception as e:
+    except MigrateFailed as e:
         drop_database(name, conninfo)
-        raise _MigrateError(f"{type(e).__name__}: {e}") from None
+        raise _MigrateError(str(e)) from None
+    except Exception:
+        drop_database(name, conninfo)  # setup or seed failed: a task bug, reported as a harness error
+        raise
 
 
 def _call(solution: Solution, call: Call):
@@ -264,10 +296,10 @@ def grade_in_subprocess(task_dir: Path, solution: Path, out: Path, *, timeout_s:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        return {"task_id": Path(task_dir).name, "solution": str(solution), "status": "harness_error",
+        return {"task_id": Path(task_dir).name, "solution": str(solution), "status": "harness_error", "failure_category": "harness",
                 "harness_detail": f"grading took longer than {timeout_s}s", "passed": False}
     if proc.returncode != 0:
-        return {"task_id": Path(task_dir).name, "solution": str(solution), "status": "harness_error",
+        return {"task_id": Path(task_dir).name, "solution": str(solution), "status": "harness_error", "failure_category": "harness",
                 "harness_detail": proc.stderr.strip()[-2000:], "passed": False}
     return json.loads((out / "verdict.json").read_text(encoding="utf-8"))
 

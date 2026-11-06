@@ -364,20 +364,32 @@ def build_template(
     role: str | None = None,
     conninfo: str = "",
 ) -> None:
-    """Create database `name`: schema, then optional migrate(db), then seed rows.
+    """Create database `name`: schema, then seed rows, then optional migrate(db).
 
+    migrate() runs last, on a database that already holds the scenario's
+    existing rows, like a production migration: a constraint it adds is checked
+    against them, and a counter it creates must be backfilled from them.
     Every schedule starts from a byte-for-byte copy of it (SPEC §5.6). With
     `role`, the database is owned by that role and all three steps run as it.
+    A failure inside migrate() raises MigrateFailed; any other failure is the
+    task's or the harness's, not the solution's.
     """
     with psycopg.connect(conninfo, autocommit=True) as admin:
         _recreate_database(admin, name, owner=role)
     with connect(name, conninfo, role) as conn:
         if setup_sql.strip():
             conn.execute(setup_sql)
-        if migrate is not None:
-            migrate(Db(conn))
         if seed_sql:
             conn.execute(seed_sql)
+        if migrate is not None:
+            try:
+                migrate(Db(conn))
+            except Exception as e:
+                raise MigrateFailed(f"{type(e).__name__}: {e}") from e
+
+
+class MigrateFailed(Exception):
+    """The solution's migrate() raised while the template database was built."""
 
 
 def drop_database(name: str, conninfo: str = "") -> None:

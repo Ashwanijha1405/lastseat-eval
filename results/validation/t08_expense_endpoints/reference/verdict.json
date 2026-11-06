@@ -76,7 +76,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.05
+      "seconds": 1.17
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -92,7 +92,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.02
+      "seconds": 1.01
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -108,7 +108,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.02
+      "seconds": 1.0
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -124,7 +124,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.03
+      "seconds": 1.0
     },
     {
       "name": "approval and a raise that both fit",
@@ -140,7 +140,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.11
+      "seconds": 1.04
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -156,7 +156,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.07
+      "seconds": 1.03
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -172,7 +172,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.82
+      "seconds": 6.65
     }
   ],
   "scores": {
@@ -184,5 +184,6 @@
   "safety_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 13.68
+  "seconds": 13.42,
+  "failure_category": null
 }

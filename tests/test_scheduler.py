@@ -1,6 +1,7 @@
 """The scheduler catches known races, passes known-safe code, and is deterministic."""
 
 import math
+import os
 
 import psycopg
 import pytest
@@ -248,3 +249,41 @@ def test_statement_that_never_finishes_is_a_harness_timeout(explorer):
 
     assert result.harness_error is not None
     assert result.harness_error.status == "harness_timeout"
+
+
+# --- template build order: setup.sql, seed rows, then migrate() ---------------
+
+ITEMS_SETUP = "CREATE TABLE items (id int PRIMARY KEY, shelf int NOT NULL);"
+ITEMS_SEED = "INSERT INTO items VALUES (1, 1), (2, 1), (3, 2);"
+
+
+def backfill_shelf_counts(db):
+    """A counter table, backfilled from the rows already there (like a production migration)."""
+    db.execute("CREATE TABLE shelf_counts (shelf int PRIMARY KEY, n int NOT NULL)")
+    db.execute("INSERT INTO shelf_counts SELECT shelf, count(*) FROM items GROUP BY shelf")
+
+
+def test_migrate_sees_the_seeded_rows():
+    from lastseat.db_api import connect
+    from lastseat.scheduler import build_template, drop_database
+
+    name = f"lastseat_test_order_{os.getpid()}"
+    build_template(name, ITEMS_SETUP, seed_sql=ITEMS_SEED, migrate=backfill_shelf_counts)
+    try:
+        with connect(name) as conn:
+            rows = conn.execute("SELECT shelf, n FROM shelf_counts ORDER BY shelf").fetchall()
+        assert rows == [(1, 2), (2, 1)]  # empty if migrate() ran before the seed
+    finally:
+        drop_database(name)
+
+
+def test_a_constraint_that_existing_rows_break_is_a_migrate_failure():
+    from lastseat.scheduler import MigrateFailed, build_template, drop_database
+
+    name = f"lastseat_test_order_bad_{os.getpid()}"
+    try:
+        with pytest.raises(MigrateFailed, match="UniqueViolation"):
+            build_template(name, ITEMS_SETUP, seed_sql=ITEMS_SEED,
+                           migrate=lambda db: db.execute("ALTER TABLE items ADD UNIQUE (shelf)"))
+    finally:
+        drop_database(name)
