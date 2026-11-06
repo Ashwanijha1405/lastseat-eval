@@ -11,5 +11,10 @@ Schedules: number explored per concurrent scenario (`*` = cap reached, seeded-ra
 | t01_flash_sale | `wrong/w2_repeatable_read_no_retry.py` | fail liveness | ✅ | ✅ | ❌ | 24, 24 | [1](validation/t01_flash_sale/w2_repeatable_read_no_retry/counterexample_1.txt) [2](validation/t01_flash_sale/w2_repeatable_read_no_retry/counterexample_2.txt) | ✅ ok |
 | t01_flash_sale | `wrong/w3_check_then_decrement.py` | fail safety | ❌ | ✅ | ✅ | 92, 92 | [1](validation/t01_flash_sale/w3_check_then_decrement/counterexample_1.txt) | ✅ ok |
 | t01_flash_sale | `wrong/w4_nowait_refuses.py` | fail liveness | ✅ | ✅ | ❌ | 80, 80 | [1](validation/t01_flash_sale/w4_nowait_refuses/counterexample_1.txt) [2](validation/t01_flash_sale/w4_nowait_refuses/counterexample_2.txt) | ✅ ok |
+| t02_on_call | `reference.py` | PASS | ✅ | ✅ | ✅ | 24, 24, 70 | - | ✅ ok |
+| t02_on_call | `wrong/w1_check_then_update.py` | fail safety | ❌ | ✅ | ✅ | 70, 70, 70 | [1](validation/t02_on_call/w1_check_then_update/counterexample_1.txt) | ✅ ok |
+| t02_on_call | `wrong/w2_repeatable_read_conditional_update.py` | fail safety | ❌ | ✅ | ✅ | 20, 20, 20 | [1](validation/t02_on_call/w2_repeatable_read_conditional_update/counterexample_1.txt) | ✅ ok |
+| t02_on_call | `wrong/w3_serializable_no_retry.py` | fail liveness | ✅ | ✅ | ❌ | 70, 70, 70 | [1](validation/t02_on_call/w3_serializable_no_retry/counterexample_1.txt) [2](validation/t02_on_call/w3_serializable_no_retry/counterexample_2.txt) [3](validation/t02_on_call/w3_serializable_no_retry/counterexample_3.txt) | ✅ ok |
+| t02_on_call | `wrong/w4_lock_own_row_only.py` | fail safety | ❌ | ✅ | ✅ | 252, 252, 252 | [1](validation/t02_on_call/w4_lock_own_row_only/counterexample_1.txt) | ✅ ok |
 
 **All checks passed.**

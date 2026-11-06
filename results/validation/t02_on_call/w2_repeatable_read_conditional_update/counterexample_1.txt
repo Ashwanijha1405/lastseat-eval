@@ -1,0 +1,14 @@
+scenario: two on call, both ask to leave
+R1: go_off_call(db, doctor_id=1)
+R2: go_off_call(db, doctor_id=2)
+schedule choices: [0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 2   R1  UPDATE doctors SET on_call = false WHERE id = 1 AND (SELECT count(*) FROM doctors o WHERE o.shift_id = doctors.shift_id AND o.on_call) >= 2 RETURNING id -> UPDATE 1 [(1,)]
+step 3   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 4   R2  UPDATE doctors SET on_call = false WHERE id = 2 AND (SELECT count(*) FROM doctors o WHERE o.shift_id = doctors.shift_id AND o.on_call) >= 2 RETURNING id -> UPDATE 1 [(2,)]
+step 5   R1  COMMIT -> COMMIT
+         R1  returned True
+step 6   R2  COMMIT -> COMMIT
+         R2  returned True
+INVARIANT VIOLATED: every shift has at least one doctor on call  (got [(False,)])
+reproduced on re-run: True

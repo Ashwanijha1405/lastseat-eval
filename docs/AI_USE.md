@@ -140,3 +140,33 @@ Newest entries at the bottom.
 - Open question: in safety-only scenarios a loser that *raises* (instead of
   returning False) is not penalised, matching SPEC. Stricter option: expect
   the multiset of returns, e.g. exactly one True and one False.
+
+---
+
+## M3 / t02 on-call rota (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t02_on_call/`: task.md, setup.sql (shifts, doctors), spec.yaml
+  (3 solo checks, 3 scenarios incl. a cross-shift liveness scenario),
+  reference (`FOR UPDATE` on the shift's on-call rows), four wrong variants
+  (w1 plain check-then-update, w2 REPEATABLE READ conditional UPDATE,
+  w3 SERIALIZABLE without retry, w4 lock own row only), NOTES.md.
+- `validate.py`: a `--task` run now writes `results/validation_partial.md`
+  (gitignored) so it no longer overwrites the full `validation.md`.
+
+**Verified by Claude**
+- `make validate`: t01 and t02 all green; every counterexample reproduces.
+- Reference trace inspected: R2 blocks on the `FOR UPDATE`, resumes with only
+  its own row after R1 commits, and refuses. Exactly one doctor leaves in all
+  24 schedules of the safety scenario.
+- Observed a real Postgres SSI behaviour: SERIALIZABLE raises 40001 even
+  for doctors in different shifts (relation-level predicate lock from a
+  sequential scan on a tiny table).
+
+**Human to review**
+- `tasks/t02_on_call/task.md` wording (no hazard named; "only this doctor's
+  row may change" is stated but only checked via solo `expect_sql` and the
+  per-scenario "still on call" invariants).
+- Whether the cross-shift scenario is fair: a real engineer using
+  SERIALIZABLE must retry; the task states valid concurrent requests must
+  succeed.

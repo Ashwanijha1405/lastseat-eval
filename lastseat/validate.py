@@ -126,9 +126,11 @@ def main(argv: list[str] | None = None) -> int:
         "|---|---|---|---|---|---|---|---|---|",
     ]
     footer = ["", f"**{'All checks passed.' if not all_problems else f'{all_problems} problem(s).'}**", ""]
-    RESULTS.mkdir(exist_ok=True)
-    (RESULTS / "validation.md").write_text("\n".join(header + rows + footer), encoding="utf-8")
-    print(f"wrote {RESULTS / 'validation.md'}: {'OK' if not all_problems else f'{all_problems} problem(s)'}")
+    # Only a full run may write the report; a --task run must not drop other tasks' rows.
+    report = RESULTS / ("validation.md" if not args.task else "validation_partial.md")
+    report.parent.mkdir(exist_ok=True)
+    report.write_text("\n".join(header + rows + footer), encoding="utf-8")
+    print(f"wrote {report}: {'OK' if not all_problems else f'{all_problems} problem(s)'}")
     return 1 if all_problems else 0
 
 
