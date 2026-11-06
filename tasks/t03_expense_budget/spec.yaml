@@ -1,0 +1,90 @@
+id: t03_expense_budget
+title: Department expense approvals within budget
+entrypoint: approve_expense
+signature: "approve_expense(db, expense_id: int) -> bool"
+
+invariants:
+  - name: no department's approved total exceeds its budget
+    sql: >
+      SELECT bool_and(COALESCE(a.total, 0) <= d.budget)
+      FROM departments d
+      LEFT JOIN (SELECT department_id, sum(amount) AS total FROM expenses
+                 WHERE status = 'approved' GROUP BY department_id) a
+        ON a.department_id = d.id
+
+solo_checks:
+  - name: approval within budget succeeds
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'pending');
+    call: {expense_id: 2}
+    expect_return: true
+    expect_sql: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses
+  - name: approval reaching the budget exactly succeeds
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 70, 'pending');
+    call: {expense_id: 2}
+    expect_return: true
+    expect_sql: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses
+  - name: approval over budget is refused cleanly
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 71, 'pending');
+    call: {expense_id: 2}
+    expect_return: false
+    expect_sql: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses
+  - name: an expense that is not pending is refused
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 10, 'rejected');
+    call: {expense_id: 1}
+    expect_return: false
+    expect_sql: SELECT status = 'rejected' FROM expenses WHERE id = 1
+  - name: other departments' approvals do not count
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100), (2, 'sales', 100);
+      INSERT INTO expenses VALUES (1, 2, 90, 'approved'), (2, 1, 60, 'pending');
+    call: {expense_id: 2}
+    expect_return: true
+    expect_sql: SELECT status = 'approved' FROM expenses WHERE id = 2
+
+concurrent_scenarios:
+  - name: nothing approved yet, two approvals that do not both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 60, 'pending'), (2, 1, 50, 'pending');
+    requests:
+      - {expense_id: 1}
+      - {expense_id: 2}
+    must_all_succeed: false
+  - name: one already approved, two approvals that do not both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'pending'), (3, 1, 50, 'pending');
+    requests:
+      - {expense_id: 2}
+      - {expense_id: 3}
+    must_all_succeed: false
+  - name: two approvals that both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 30, 'pending'), (3, 1, 40, 'pending');
+    requests:
+      - {expense_id: 2}
+      - {expense_id: 3}
+    must_all_succeed: true
+    invariants:
+      - name: both expenses approved
+        sql: SELECT bool_and(status = 'approved') FROM expenses WHERE id IN (2, 3)
+  - name: approvals in two different departments
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100), (2, 'sales', 100);
+      INSERT INTO expenses VALUES (1, 1, 80, 'pending'), (2, 2, 80, 'pending');
+    requests:
+      - {expense_id: 1}
+      - {expense_id: 2}
+    must_all_succeed: true
+    invariants:
+      - name: both expenses approved
+        sql: SELECT bool_and(status = 'approved') FROM expenses WHERE id IN (1, 2)

@@ -170,3 +170,32 @@ Newest entries at the bottom.
 - Whether the cross-shift scenario is fair: a real engineer using
   SERIALIZABLE must retry; the task states valid concurrent requests must
   succeed.
+
+---
+
+## M3 / t03 expense budget (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t03_expense_budget/`: task.md, setup.sql (departments, expenses),
+  spec.yaml (5 solo checks; 4 scenarios: nothing approved / one approved,
+  both "only one fits", plus same-department and cross-department "both
+  fit"), reference (department row `FOR UPDATE`, then fresh read), four
+  wrong variants (w1 plain sum, w2 `FOR UPDATE` approved rows + Python sum,
+  w3 department lock under REPEATABLE READ, w4 `FOR UPDATE` approved rows +
+  fresh SUM), NOTES.md.
+
+**Verified by Claude**
+- `make validate`: t01–t03 green; every counterexample reproduces.
+- Predictions written before running, all confirmed by the harness: w3 is
+  unsafe (snapshot taken by the blocking first statement, no 40001 because
+  the department row was only locked); w4 is safe with an approved row
+  present and unsafe with none.
+- Reference first hit the 2000-schedule cap in one scenario; rewritten from
+  7 to 5 steps per request so every scenario is exhaustive.
+
+**Human to review**
+- `tasks/t03_expense_budget/task.md` wording.
+- Grading cost: wrong variants with ~924 schedules per scenario take
+  80–150 s each. Model solutions will be similar, so M4/M6 likely needs
+  parallel grading (one subprocess per solution; db names already include
+  the pid).

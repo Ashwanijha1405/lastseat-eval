@@ -42,7 +42,7 @@
       "counterexamples": [
         "scenario: two on call, both ask to leave\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=2)\nschedule choices: [0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  UPDATE doctors SET on_call = false WHERE id = 1 AND (SELECT count(*) FROM doctors o WHERE o.shift_id = doctors.shift_id AND o.on_call) >= 2 RETURNING id -> UPDATE 1 [(1,)]\nstep 3   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 4   R2  UPDATE doctors SET on_call = false WHERE id = 2 AND (SELECT count(*) FROM doctors o WHERE o.shift_id = doctors.shift_id AND o.on_call) >= 2 RETURNING id -> UPDATE 1 [(2,)]\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 6   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: every shift has at least one doctor on call  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 0.84
+      "seconds": 0.8
     },
     {
       "name": "three on call, two ask to leave",
@@ -58,7 +58,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.52
+      "seconds": 0.54
     },
     {
       "name": "one leaves from each of two shifts",
@@ -74,7 +74,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.52
+      "seconds": 0.55
     }
   ],
   "scores": {
@@ -85,5 +85,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 2.07
+  "seconds": 2.09
 }
