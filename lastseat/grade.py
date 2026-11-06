@@ -88,7 +88,7 @@ def grade(task: Task, source: str, *, solution_label: str = "solution.py", conni
     started = time.monotonic()
     verdict = Verdict(task.id, solution_label, "graded")
     try:
-        solution = load_solution(source, task.entrypoints)
+        solution = load_solution(source, task.entrypoints, allow_migrate=task.allow_migrate)
     except LoadError as e:
         verdict.status, verdict.load_error, verdict.load_detail = "load_error", e.reason, e.detail
         return verdict

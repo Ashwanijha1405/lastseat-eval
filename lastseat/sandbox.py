@@ -41,11 +41,12 @@ class LoadError(Exception):
 
     def __init__(self, reason: str, detail: str) -> None:
         super().__init__(f"{reason}: {detail}")
-        self.reason = reason  # syntax_error | forbidden_import | exec_error | missing_entrypoint
+        # syntax_error | forbidden_import | exec_error | missing_entrypoint | forbidden_migrate
+        self.reason = reason
         self.detail = detail
 
 
-def load_solution(source: str, entrypoints: tuple[str, ...]) -> Solution:
+def load_solution(source: str, entrypoints: tuple[str, ...], *, allow_migrate: bool = True) -> Solution:
     try:
         tree = ast.parse(source, filename="solution.py")
     except SyntaxError as e:
@@ -65,6 +66,9 @@ def load_solution(source: str, entrypoints: tuple[str, ...]) -> Solution:
     if missing:
         raise LoadError("missing_entrypoint", "no function named " + ", ".join(repr(n) for n in missing))
     migrate = namespace.get("migrate")
+    if callable(migrate) and not allow_migrate:
+        # Refused before grading starts, so a forbidden migrate() never runs.
+        raise LoadError("forbidden_migrate", "this task fixes the schema; the module must not define migrate()")
     return Solution({name: namespace[name] for name in entrypoints}, migrate if callable(migrate) else None)
 
 

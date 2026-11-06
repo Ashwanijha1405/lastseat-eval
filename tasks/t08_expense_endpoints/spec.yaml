@@ -1,6 +1,7 @@
 id: t08_expense_endpoints
 title: Expense approvals, edits and budget changes running together
 entrypoints: [approve_expense, edit_expense, change_budget]
+allow_migrate: false  # task.md: the schema is fixed; a module defining migrate() fails to load
 signature: >-
   approve_expense(db, expense_id: int) -> bool;
   edit_expense(db, expense_id: int, new_amount: int) -> bool;

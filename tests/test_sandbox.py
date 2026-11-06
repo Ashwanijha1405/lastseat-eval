@@ -4,6 +4,7 @@ import pytest
 
 from lastseat.sandbox import LoadError, load_solution
 from lastseat.task import all_tasks
+from lastseat.validate import expected_failures
 
 
 def reason(source: str, entrypoint: str = "f") -> str:
@@ -71,7 +72,23 @@ def test_migrate_is_optional():
     assert load_solution("def f(db): pass\ndef migrate(db): pass\n", ("f",)).migrate is not None
 
 
+def test_migrate_can_be_forbidden():
+    with pytest.raises(LoadError) as e:
+        load_solution("def f(db): pass\ndef migrate(db): pass\n", ("f",), allow_migrate=False)
+    assert e.value.reason == "forbidden_migrate"
+    assert load_solution("def f(db): pass\n", ("f",), allow_migrate=False).migrate is None
+
+
 def test_every_task_solution_loads():
+    """Except wrong variants written to fail loading, which must fail for their stated reason."""
     for task in all_tasks():
         for path in [task.reference_path, *task.wrong_paths]:
-            load_solution(path.read_text(encoding="utf-8"), task.entrypoints)
+            source = path.read_text(encoding="utf-8")
+            wanted = set() if path == task.reference_path else expected_failures(path)
+            load = [w.split(":", 1)[1] for w in wanted if w.startswith("load_error:")]
+            if load:
+                with pytest.raises(LoadError) as e:
+                    load_solution(source, task.entrypoints, allow_migrate=task.allow_migrate)
+                assert e.value.reason == load[0], path
+            else:
+                load_solution(source, task.entrypoints, allow_migrate=task.allow_migrate)

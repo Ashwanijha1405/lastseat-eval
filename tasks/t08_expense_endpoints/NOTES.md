@@ -10,6 +10,11 @@ hazard; it only says the three functions run at the same time.
 
 New harness feature used: `entrypoints: [...]` and `{fn, args}` requests.
 
+**Schema fixed** (`allow_migrate: false`): task.md says schema changes go through a
+separate review, so no `migrate()`, tables, columns, triggers or constraints. A
+running-total column with a CHECK would turn the task into a one-row update and
+skip the cross-function locking discipline it is meant to test.
+
 ## Scenarios
 
 | scenario | requests | hazard it targets |
@@ -37,6 +42,10 @@ New harness feature used: `entrypoints: [...]` and `{fn, args}` requests.
 - **w4 edit skips the lock for pending expenses:** only the
   "pending expense raised while approved" scenario catches it (counterexample:
   the status `pending` it read is stale when its UPDATE runs).
+
+- **w5 running-total column:** defines `migrate()` (column + trigger + CHECK).
+  Refused at load with `forbidden_migrate`, never graded. The design itself may
+  well be safe; it exists to prove the schema rule is enforced.
 
 ## Expected model failure modes
 

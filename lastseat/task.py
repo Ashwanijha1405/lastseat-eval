@@ -77,6 +77,7 @@ class Task:
     invariants: tuple[Invariant, ...]
     solo_checks: tuple[SoloCheck, ...]
     scenarios: tuple[Scenario, ...]
+    allow_migrate: bool = True  # false: a module that defines migrate() fails to load
 
     @property
     def reference_path(self) -> Path:
@@ -166,6 +167,7 @@ def load_task(directory: Path | str) -> Task:
         invariants=invariants,
         solo_checks=tuple(solo),
         scenarios=tuple(scenarios),
+        allow_migrate=spec.opt("allow_migrate", bool, True),
     )
     spec.done()
     return task

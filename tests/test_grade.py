@@ -128,3 +128,19 @@ def test_a_race_between_two_different_functions_is_caught(tmp_path):
 def test_a_missing_second_function_is_a_load_error(tmp_path):
     v = grade(_two_fn_task(tmp_path), DEPOSIT)
     assert v.status == "load_error" and v.load_error == "missing_entrypoint" and "'withdraw'" in v.load_detail
+
+
+# --- allow_migrate: false (t08: the schema is fixed) ---------------------------
+
+T08 = load_task(TASKS_DIR / "t08_expense_endpoints")
+
+
+def test_a_task_can_forbid_migrate_and_it_never_runs():
+    # If this migrate() ran, the verdict would be migrate_error instead.
+    source = T08.reference_path.read_text(encoding="utf-8") + (
+        "\n\ndef migrate(db):\n    raise RuntimeError('migrate() ran')\n"
+    )
+    v = grade(T08, source)
+    assert T08.allow_migrate is False
+    assert v.status == "load_error" and v.load_error == "forbidden_migrate"
+    assert v.solo == [] and v.scenarios == [] and v.scores["total"] == 0.0

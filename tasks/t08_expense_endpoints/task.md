@@ -46,7 +46,7 @@ Amounts and budgets are whole currency units. A department's *approved total* is
 - If the department's approved total is at most `new_budget`: set its `budget` to `new_budget` and return `True`.
 - Otherwise return `False` and change nothing.
 
-Each call may change only the one row it is about (the expense, or the department).
+The schema is fixed: schema changes go through a separate review, so this change must ship without one. Do not define migrate(), and do not add tables, columns, triggers or constraints. Within that, use any SQL, locking and isolation level you like.
 
 ## Rules that must always hold, however many requests run at the same time
 

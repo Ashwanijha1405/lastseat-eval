@@ -25,12 +25,22 @@ RESULTS = Path(__file__).resolve().parent.parent / "results"
 _EXPECT = re.compile(r"^EXPECT:\s*(.+?)\s*$", re.MULTILINE)
 
 
+LOAD_ERRORS = ("forbidden_migrate",)  # load errors a wrong variant may be written to trigger
+
+
 def expected_failures(path: Path) -> set[str]:
-    """Components a wrong variant must fail, from its docstring's EXPECT: line."""
+    """What a wrong variant must fail, from its docstring's EXPECT: line: score
+    components (`EXPECT: safety, liveness`), or one load error
+    (`EXPECT: load_error forbidden_migrate`, returned as {"load_error:forbidden_migrate"})."""
     doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
     m = _EXPECT.search(doc)
     if not m:
         raise ValueError(f"{path}: docstring must explain the bug and end with 'EXPECT: <components>'")
+    load = re.fullmatch(r"load_error\s+(\w+)", m.group(1))
+    if load:
+        if load.group(1) not in LOAD_ERRORS:
+            raise ValueError(f"{path}: EXPECT load_error must be one of {LOAD_ERRORS}, got {load.group(1)!r}")
+        return {f"load_error:{load.group(1)}"}
     parts = {p.strip() for p in m.group(1).split(",")}
     if not parts or not parts <= set(SCORE_WEIGHTS):
         raise ValueError(f"{path}: EXPECT must list some of {sorted(SCORE_WEIGHTS)}, got {m.group(1)!r}")
@@ -53,6 +63,8 @@ def policy_problems(task: Task) -> list[str]:
         problems.append("needs a safety-only concurrent scenario")
     if len(task.wrong_paths) < 2:
         problems.append("needs >= 2 wrong variants")
+    if not task.allow_migrate and "Do not define migrate()" not in task.prompt:
+        problems.append("allow_migrate is false, so task.md must say 'Do not define migrate()'")
     if task.setup_sql.strip() not in task.prompt:
         problems.append("task.md must contain setup.sql verbatim (the model must see the real schema)")
     return problems
@@ -61,6 +73,11 @@ def policy_problems(task: Task) -> list[str]:
 def check(task: Task, path: Path, verdict: dict, expected: set[str] | None) -> list[str]:
     """Problems with one solution's verdict. expected=None means reference."""
     problems = []
+    wanted_load = next((e.split(":", 1)[1] for e in expected or () if e.startswith("load_error:")), None)
+    if wanted_load:
+        got = verdict.get("load_error") if verdict.get("status") == "load_error" else None
+        return [] if got == wanted_load else [f"expected load_error {wanted_load}, got status "
+                                              f"{verdict.get('status')} ({verdict.get('load_error')})"]
     if verdict.get("status") != "graded":
         detail = verdict.get("harness_detail") or f"{verdict.get('load_error')}: {verdict.get('load_detail')}"
         return [f"status {verdict.get('status')} ({detail})"]

@@ -487,3 +487,31 @@ The paid path stays working behind `--config paid`.
 - The numbers in each scenario: each request must fit alone and the pair
   must not (safety scenarios), or both must fit in either order
   (`must_all_succeed`).
+
+### t08 review change: fixed schema (2026-11-07)
+
+**Human decided**: replace "Each call may change only the one row it is about"
+with a fixed-schema rule (no `migrate()`, tables, columns, triggers or
+constraints; any SQL, locking and isolation level), enforced by the grader.
+Keep w4 and "in any order".
+
+**Claude drafted**
+- `allow_migrate: false` in spec.yaml (`Task.allow_migrate`, default true);
+  `load_solution(..., allow_migrate=False)` raises `LoadError("forbidden_migrate")`
+  before grading, so the forbidden `migrate()` never runs. SPEC §6 updated.
+- validate: `EXPECT: load_error forbidden_migrate` (the variant must fail to
+  load for exactly that reason); policy check that such a task's task.md says
+  "Do not define migrate()".
+- `wrong/w5_running_total_column.py`: column + trigger + CHECK via migrate().
+- Tests: `test_migrate_can_be_forbidden`; `test_a_task_can_forbid_migrate_and_it_never_runs`
+  (a migrate that raises would give `migrate_error`; it gives `forbidden_migrate`);
+  `test_every_task_solution_loads` now checks load-error variants fail for their reason.
+
+**Verified by Claude**
+- With the check disabled, 3 tests fail; with it, 91 pass.
+- `validate t08`: reference ok; w1-w4 fail safety; w5 `load_error forbidden_migrate`.
+  t01-t07 were not re-validated (they keep the default `allow_migrate: true`;
+  `test_every_task_solution_loads` still loads every one of their solutions).
+
+**Human to review**
+- The new task.md sentence and the w5 docstring.
