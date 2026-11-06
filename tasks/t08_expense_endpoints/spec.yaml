@@ -1,0 +1,159 @@
+id: t08_expense_endpoints
+title: Expense approvals, edits and budget changes running together
+entrypoints: [approve_expense, edit_expense, change_budget]
+signature: >-
+  approve_expense(db, expense_id: int) -> bool;
+  edit_expense(db, expense_id: int, new_amount: int) -> bool;
+  change_budget(db, dept_id: int, new_budget: int) -> bool
+
+invariants:
+  - name: no department's approved total exceeds its budget
+    sql: >
+      SELECT bool_and(COALESCE(a.total, 0) <= d.budget)
+      FROM departments d
+      LEFT JOIN (SELECT department_id, sum(amount) AS total FROM expenses
+                 WHERE status = 'approved' GROUP BY department_id) a
+        ON a.department_id = d.id
+
+solo_checks:
+  # approve_expense
+  - name: approval within budget succeeds
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 70, 'pending');
+    call: {fn: approve_expense, args: {expense_id: 2}}
+    expect_return: true
+    expect_sql: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses
+  - name: approval over budget is refused cleanly
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 71, 'pending');
+    call: {fn: approve_expense, args: {expense_id: 2}}
+    expect_return: false
+    expect_sql: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses
+  - name: an expense that is not pending is not approved
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 10, 'rejected');
+    call: {fn: approve_expense, args: {expense_id: 1}}
+    expect_return: false
+    expect_sql: SELECT status = 'rejected' FROM expenses WHERE id = 1
+  # edit_expense
+  - name: raising an approved expense within budget succeeds
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'approved');
+    call: {fn: edit_expense, args: {expense_id: 1, new_amount: 60}}
+    expect_return: true
+    expect_sql: SELECT array_agg(amount ORDER BY id) = '{60,40}' AND bool_and(status = 'approved') FROM expenses
+  - name: raising an approved expense over budget is refused cleanly
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'approved');
+    call: {fn: edit_expense, args: {expense_id: 1, new_amount: 61}}
+    expect_return: false
+    expect_sql: SELECT array_agg(amount ORDER BY id) = '{30,40}' FROM expenses
+  - name: a pending expense may be raised above the budget
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 90, 'approved'), (2, 1, 40, 'pending');
+    call: {fn: edit_expense, args: {expense_id: 2, new_amount: 500}}
+    expect_return: true
+    expect_sql: SELECT amount = 500 AND status = 'pending' FROM expenses WHERE id = 2
+  # change_budget
+  - name: lowering the budget to exactly the approved total succeeds
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'approved'), (3, 1, 50, 'pending');
+    call: {fn: change_budget, args: {dept_id: 1, new_budget: 70}}
+    expect_return: true
+    expect_sql: SELECT budget = 70 FROM departments WHERE id = 1
+  - name: lowering the budget below the approved total is refused cleanly
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 40, 'approved');
+    call: {fn: change_budget, args: {dept_id: 1, new_budget: 69}}
+    expect_return: false
+    expect_sql: SELECT budget = 100 FROM departments WHERE id = 1
+  - name: other departments' approvals do not count
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100), (2, 'sales', 100);
+      INSERT INTO expenses VALUES (1, 2, 90, 'approved'), (2, 1, 10, 'approved');
+    call: {fn: change_budget, args: {dept_id: 1, new_budget: 20}}
+    expect_return: true
+    expect_sql: SELECT array_agg(budget ORDER BY id) = '{20,100}' FROM departments
+
+concurrent_scenarios:
+  # Each request below fits on its own; together they would exceed the budget.
+  - name: approval and a raise of an approved expense, not both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 40, 'approved'), (2, 1, 50, 'pending');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 2}}
+      - {fn: edit_expense, args: {expense_id: 1, new_amount: 60}}
+    must_all_succeed: false
+  - name: approval and a budget cut, not both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 40, 'approved'), (2, 1, 40, 'pending');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 2}}
+      - {fn: change_budget, args: {dept_id: 1, new_budget: 60}}
+    must_all_succeed: false
+  - name: raise of an approved expense and a budget cut, not both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 40, 'approved');
+    requests:
+      - {fn: edit_expense, args: {expense_id: 1, new_amount: 70}}
+      - {fn: change_budget, args: {dept_id: 1, new_budget: 50}}
+    must_all_succeed: false
+  - name: a pending expense is raised while it is being approved
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 50);
+      INSERT INTO expenses VALUES (1, 1, 30, 'pending');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 1}}
+      - {fn: edit_expense, args: {expense_id: 1, new_amount: 90}}
+    must_all_succeed: false
+  # Both requests fit in either order, so both must return True.
+  - name: approval and a raise that both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 30, 'pending');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 2}}
+      - {fn: edit_expense, args: {expense_id: 1, new_amount: 50}}
+    must_all_succeed: true
+    success_sql:
+      - name: expense 2 approved and expense 1 raised to 50
+        sql: >
+          SELECT array_agg(status ORDER BY id) = '{approved,approved}'
+             AND array_agg(amount ORDER BY id) = '{50,30}' FROM expenses
+  - name: approval and a budget cut that both fit
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100);
+      INSERT INTO expenses VALUES (1, 1, 30, 'approved'), (2, 1, 20, 'pending');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 2}}
+      - {fn: change_budget, args: {dept_id: 1, new_budget: 60}}
+    must_all_succeed: true
+    success_sql:
+      - name: expense 2 approved and the budget is 60
+        sql: >
+          SELECT (SELECT status = 'approved' FROM expenses WHERE id = 2)
+             AND (SELECT budget = 60 FROM departments WHERE id = 1)
+  - name: approval in one department, budget cut in another
+    seed_sql: |
+      INSERT INTO departments VALUES (1, 'research', 100), (2, 'sales', 100);
+      INSERT INTO expenses VALUES (1, 1, 50, 'pending'), (2, 2, 70, 'approved');
+    requests:
+      - {fn: approve_expense, args: {expense_id: 1}}
+      - {fn: change_budget, args: {dept_id: 2, new_budget: 80}}
+    must_all_succeed: true
+    success_sql:
+      - name: expense 1 approved and sales' budget is 80
+        sql: >
+          SELECT (SELECT status = 'approved' FROM expenses WHERE id = 1)
+             AND (SELECT budget = 80 FROM departments WHERE id = 2)

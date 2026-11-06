@@ -454,3 +454,36 @@ The paid path stays working behind `--config paid`.
   has one entrypoint; check you agree with that restriction.
 - `results/validation/`: all t01-t07 verdicts were regenerated (they now
   carry `safety_reason`); the 36 EXPECT outcomes are unchanged.
+
+## t08 expense endpoints (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Claude drafted**
+- `tasks/t08_expense_endpoints/`: three entrypoints (`approve_expense`,
+  `edit_expense`, `change_budget`) over t03's schema. Invariant: approved
+  total <= budget per department. 9 solo checks (3 per function), 4 safety
+  scenarios mixing functions, 3 `must_all_succeed` scenarios (two in one
+  department, one across two departments).
+- Reference: every function locks the department row FOR UPDATE, then reads
+  status / amount / total in a new statement (READ COMMITTED). One lock per
+  request, so no deadlock.
+- Wrong variants (all `EXPECT: safety`): w1 unprotected edit; w2 unprotected
+  change_budget; w3 edit locks the expense row instead of the department;
+  w4 (Claude's addition) edit skips the lock when the expense reads pending.
+- task.md does not name the hazard (grep for lock/race/concurren/skew/
+  isolation found nothing beyond "run at the same time").
+
+**Verified by Claude**
+- `validate t08`: reference safe and live in every scenario, exhaustive
+  (36 schedules per one-department scenario, 252 across departments).
+  w1 and w3 fail 3 safety scenarios, w2 the 2 budget-cut ones, w4 only
+  "a pending expense is raised while it is being approved".
+- The w2 and w4 docstrings were rewritten to match the counterexample traces
+  Postgres actually produced; no grader or scheduler change.
+
+**Human to review**
+- Whether "an approved expense may be raised" and "a pending expense may be
+  raised above the budget" are the business rules you want.
+- w4: keep it as a fourth variant, or drop it.
+- The numbers in each scenario: each request must fit alone and the pair
+  must not (safety scenarios), or both must fit in either order
+  (`must_all_succeed`).

@@ -1,0 +1,190 @@
+{
+  "task_id": "t08_expense_endpoints",
+  "solution": "/app/tasks/t08_expense_endpoints/wrong/w4_edit_pending_without_lock.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "approval within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval within budget succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 2) FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 2 -> [('pending', 70, 30)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval over budget is refused cleanly\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 2) FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 2 -> [('pending', 71, 30)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses\n"
+    },
+    {
+      "name": "an expense that is not pending is not approved",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: an expense that is not pending is not approved\ncall: approve_expense(db, expense_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('rejected', 10, 0)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'rejected' FROM expenses WHERE id = 1\n"
+    },
+    {
+      "name": "raising an approved expense within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: raising an approved expense within budget succeeds\ncall: edit_expense(db, expense_id=1, new_amount=60)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT status FROM expenses WHERE id = 1 -> [('approved',)]\nstep 3   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('approved', 30, 70)]\nstep 5   R1  UPDATE expenses SET amount = 60 WHERE id = 1 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(amount ORDER BY id) = '{60,40}' AND bool_and(status = 'approved') FROM expenses\n"
+    },
+    {
+      "name": "raising an approved expense over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: raising an approved expense over budget is refused cleanly\ncall: edit_expense(db, expense_id=1, new_amount=61)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT status FROM expenses WHERE id = 1 -> [('approved',)]\nstep 3   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('approved', 30, 70)]\nstep 5   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(amount ORDER BY id) = '{30,40}' FROM expenses\n"
+    },
+    {
+      "name": "a pending expense may be raised above the budget",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: a pending expense may be raised above the budget\ncall: edit_expense(db, expense_id=2, new_amount=500)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT status FROM expenses WHERE id = 2 -> [('pending',)]\nstep 3   R1  UPDATE expenses SET amount = 500 WHERE id = 2 -> UPDATE 1\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT amount = 500 AND status = 'pending' FROM expenses WHERE id = 2\n"
+    },
+    {
+      "name": "lowering the budget to exactly the approved total succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: lowering the budget to exactly the approved total succeeds\ncall: change_budget(db, dept_id=1, new_budget=70)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT 1 FROM departments WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 3   R1  SELECT COALESCE(sum(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(70,)]\nstep 4   R1  UPDATE departments SET budget = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT budget = 70 FROM departments WHERE id = 1\n"
+    },
+    {
+      "name": "lowering the budget below the approved total is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: lowering the budget below the approved total is refused cleanly\ncall: change_budget(db, dept_id=1, new_budget=69)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT 1 FROM departments WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 3   R1  SELECT COALESCE(sum(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(70,)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT budget = 100 FROM departments WHERE id = 1\n"
+    },
+    {
+      "name": "other departments' approvals do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: other departments' approvals do not count\ncall: change_budget(db, dept_id=1, new_budget=20)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT 1 FROM departments WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 3   R1  SELECT COALESCE(sum(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(10,)]\nstep 4   R1  UPDATE departments SET budget = 20 WHERE id = 1 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(budget ORDER BY id) = '{20,100}' FROM departments\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "approval and a raise of an approved expense, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 74,
+      "dfs_schedules": 74,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 2.34
+    },
+    {
+      "name": "approval and a budget cut, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.19
+    },
+    {
+      "name": "raise of an approved expense and a budget cut, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 74,
+      "dfs_schedules": 74,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 2.33
+    },
+    {
+      "name": "a pending expense is raised while it is being approved",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 91,
+      "dfs_schedules": 91,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 70,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: a pending expense is raised while it is being approved\nR1: approve_expense(db, expense_id=1)\nR2: edit_expense(db, expense_id=1, new_amount=90)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(50,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('pending', 30, 0)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT status FROM expenses WHERE id = 1 -> [('pending',)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE expenses SET amount = 90 WHERE id = 1 -> UPDATE 1\nstep 9   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 4.64
+    },
+    {
+      "name": "approval and a raise that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 74,
+      "dfs_schedules": 74,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 2.45
+    },
+    {
+      "name": "approval and a budget cut that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.18
+    },
+    {
+      "name": "approval in one department, budget cut in another",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 252,
+      "dfs_schedules": 252,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 7.48
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 0.5
+  },
+  "safety_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 22.22
+}
