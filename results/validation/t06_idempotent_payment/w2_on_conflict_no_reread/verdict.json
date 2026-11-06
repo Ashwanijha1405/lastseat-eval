@@ -59,7 +59,7 @@
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0]\nstep 1   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned 1\nstep 3   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 0 []\nstep 4   R2  COMMIT   [autocommit] -> COMMIT\n         R2  returned None\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nreproduced on re-run: True\n",
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [1, 0]\nstep 1   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> blocked (waiting for R2)\nstep 3   R2  COMMIT   [autocommit] -> COMMIT\n         R2  returned 1\n         R1  step 2 resumed -> INSERT 0 0 []\nstep 4   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned None\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 0.22
+      "seconds": 0.21
     },
     {
       "name": "two different keys at the same moment",
@@ -86,5 +86,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 0.68
+  "seconds": 0.71
 }

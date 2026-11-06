@@ -37,5 +37,10 @@ Schedules: number explored per concurrent scenario (`*` = cap reached, seeded-ra
 | t06_idempotent_payment | `wrong/w2_on_conflict_no_reread.py` | fail liveness+solo | ✅ | ❌ | ❌ | 4, 4, 6 | [1](validation/t06_idempotent_payment/w2_on_conflict_no_reread/counterexample_1.txt) [2](validation/t06_idempotent_payment/w2_on_conflict_no_reread/counterexample_2.txt) [3](validation/t06_idempotent_payment/w2_on_conflict_no_reread/counterexample_3.txt) | ✅ ok |
 | t06_idempotent_payment | `wrong/w3_reread_in_repeatable_read.py` | fail liveness | ✅ | ✅ | ❌ | 14, 14, 20 | [1](validation/t06_idempotent_payment/w3_reread_in_repeatable_read/counterexample_1.txt) [2](validation/t06_idempotent_payment/w3_reread_in_repeatable_read/counterexample_2.txt) | ✅ ok |
 | t06_idempotent_payment | `wrong/w4_unique_but_unhandled.py` | fail liveness | ✅ | ✅ | ❌ | 50, 50, 70 | [1](validation/t06_idempotent_payment/w4_unique_but_unhandled/counterexample_1.txt) [2](validation/t06_idempotent_payment/w4_unique_but_unhandled/counterexample_2.txt) | ✅ ok |
+| t07_node_drain | `reference.py` | PASS | ✅ | ✅ | ✅ | 36, 36, 252 | - | ✅ ok |
+| t07_node_drain | `wrong/w1_check_then_update.py` | fail safety | ❌ | ✅ | ✅ | 70, 70, 70 | [1](validation/t07_node_drain/w1_check_then_update/counterexample_1.txt) | ✅ ok |
+| t07_node_drain | `wrong/w2_deactivate_then_verify.py` | fail liveness | ✅ | ✅ | ❌ | 30, 30, 70 | [1](validation/t07_node_drain/w2_deactivate_then_verify/counterexample_1.txt) [2](validation/t07_node_drain/w2_deactivate_then_verify/counterexample_2.txt) | ✅ ok |
+| t07_node_drain | `wrong/w3_per_shard_locks_unsorted.py` | fail liveness | ✅ | ✅ | ❌ | 148, 168, 252 | [1](validation/t07_node_drain/w3_per_shard_locks_unsorted/counterexample_1.txt) [2](validation/t07_node_drain/w3_per_shard_locks_unsorted/counterexample_2.txt) | ✅ ok |
+| t07_node_drain | `wrong/w4_sorted_lock_repeatable_read.py` | fail safety | ❌ | ✅ | ✅ | 36, 36, 252 | [1](validation/t07_node_drain/w4_sorted_lock_repeatable_read/counterexample_1.txt) | ✅ ok |
 
 **All checks passed.**

@@ -1,0 +1,22 @@
+scenario: two drains of nodes sharing several shards, both fit
+R1: drain_node(db, node_id='A')
+R2: drain_node(db, node_id='B')
+schedule choices: [0, 0, 0, 1, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active -> [(1,), (2,)]
+step 3   R1  SELECT node_id FROM replicas WHERE shard_id = 1 AND active FOR UPDATE -> [('A',), ('B',), ('C',)]
+step 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 5   R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active -> [(2,), (1,)]
+step 6   R2  SELECT node_id FROM replicas WHERE shard_id = 2 AND active FOR UPDATE -> [('B',), ('A',), ('C',)]
+step 7   R1  SELECT node_id FROM replicas WHERE shard_id = 2 AND active FOR UPDATE -> blocked (waiting for R2)
+step 8   R2  SELECT node_id FROM replicas WHERE shard_id = 1 AND active FOR UPDATE -> [('A',), ('B',), ('C',)]
+         R1  step 7 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected
+         R1  function ended inside an open transaction; harness rolled it back
+         R1  raised DeadlockDetected (40P01): deadlock detected
+step 9   R2  UPDATE replicas SET active = false WHERE node_id = 'B' -> UPDATE 2
+step 10  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: every shard has at least one active replica
+SUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])
+warning: R1: function ended inside an open transaction; harness rolled it back
+reproduced on re-run: True

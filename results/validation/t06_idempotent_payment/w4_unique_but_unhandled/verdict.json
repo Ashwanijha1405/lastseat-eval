@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.21
+      "seconds": 1.27
     },
     {
       "name": "two attempts with the same key both get the payment id",
@@ -59,7 +59,7 @@
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned 1\nstep 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> ERROR 23505 UniqueViolation: duplicate key value violates unique constraint \"payments_idempotency_key_key\"\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised UniqueViolation (23505): duplicate key value violates unique constraint \"payments_idempotency_key_key\"\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 5   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 6   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> blocked (waiting for R2)\nstep 7   R2  COMMIT -> COMMIT\n         R2  returned 1\n         R1  step 6 resumed -> ERROR 23505 UniqueViolation: duplicate key value violates unique constraint \"payments_idempotency_key_key\"\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised UniqueViolation (23505): duplicate key value violates unique constraint \"payments_idempotency_key_key\"\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
       ],
-      "seconds": 2.38
+      "seconds": 2.22
     },
     {
       "name": "two different keys at the same moment",
@@ -75,7 +75,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.84
+      "seconds": 1.75
     }
   ],
   "scores": {
@@ -86,5 +86,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 5.6
+  "seconds": 5.4
 }

@@ -287,3 +287,25 @@ Human chose to reclassify such checks as liveness.
 - `tasks/t06_idempotent_payment/task.md`, especially "must return the id as
   an int (never None) and must not raise".
 - w1's corrected EXPECT.
+
+---
+
+## M3 / t07 node drain, stretch (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t07_node_drain/`: task.md, setup.sql (nodes, shards, replicas),
+  spec.yaml (3 solo checks incl. all-or-nothing refusal; 3 scenarios; the
+  "both fit" seed stores rows in a deliberate order so unsorted per-shard
+  locking deadlocks), reference (all affected shard rows `ORDER BY id
+  FOR UPDATE`, then fresh check), four wrong variants (w1 plain check,
+  w2 deactivate-then-verify, w3 per-shard locks unsorted, w4 sorted locks
+  under REPEATABLE READ), NOTES.md.
+
+**Verified by Claude**
+- `make validate TASK=t07_node_drain` green; all four EXPECT lines written as
+  predictions before running, all confirmed. w3 trace shows opposite shard
+  orders `[1, 2]` vs `[2, 1]` and the 40P01.
+
+**Human to review**
+- Whether relying on physical row order in the seed is acceptable (it is
+  deterministic: fresh template clone, no autovacuum, sequential scan).

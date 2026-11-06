@@ -40,7 +40,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.66
+      "seconds": 0.63
     },
     {
       "name": "two buyers, both fit",
@@ -67,5 +67,5 @@
   },
   "passed": true,
   "reproducible": true,
-  "seconds": 1.47
+  "seconds": 1.45
 }

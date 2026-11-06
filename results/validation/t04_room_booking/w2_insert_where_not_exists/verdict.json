@@ -86,7 +86,7 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.31
+      "seconds": 0.17
     }
   ],
   "scores": {
@@ -97,5 +97,5 @@
   },
   "passed": false,
   "reproducible": true,
-  "seconds": 1.03
+  "seconds": 0.86
 }

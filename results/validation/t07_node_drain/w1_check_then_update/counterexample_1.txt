@@ -1,0 +1,16 @@
+scenario: two drains that would together orphan a shard
+R1: drain_node(db, node_id='A')
+R2: drain_node(db, node_id='B')
+schedule choices: [0, 0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT count(*) FROM replicas r WHERE r.node_id = 'A' AND r.active AND NOT EXISTS (SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'A' AND o.active) -> [(0,)]
+step 3   R1  UPDATE replicas SET active = false WHERE node_id = 'A' -> UPDATE 2
+step 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 5   R2  SELECT count(*) FROM replicas r WHERE r.node_id = 'B' AND r.active AND NOT EXISTS (SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'B' AND o.active) -> [(0,)]
+step 6   R1  COMMIT -> COMMIT
+         R1  returned True
+step 7   R2  UPDATE replicas SET active = false WHERE node_id = 'B' -> UPDATE 2
+step 8   R2  COMMIT -> COMMIT
+         R2  returned True
+INVARIANT VIOLATED: every shard has at least one active replica  (got [(False,)])
+reproduced on re-run: True

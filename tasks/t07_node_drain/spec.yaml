@@ -1,0 +1,84 @@
+id: t07_node_drain
+title: Storage-node maintenance drain
+entrypoint: drain_node
+signature: "drain_node(db, node_id: str) -> bool"
+
+seed_state_sql: |
+  INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+
+invariants:
+  - name: every shard has at least one active replica
+    sql: >
+      SELECT bool_and(EXISTS (SELECT 1 FROM replicas r WHERE r.shard_id = s.id AND r.active))
+      FROM shards s
+
+solo_checks:
+  - name: drain succeeds when every shard keeps a replica
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2);
+      INSERT INTO replicas VALUES (1, 'A', true), (1, 'B', true), (2, 'A', true), (2, 'C', true);
+    call: {node_id: A}
+    expect_return: true
+    expect_sql: >
+      SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
+  - name: drain is refused if any shard would lose its last replica, and nothing changes
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2);
+      INSERT INTO replicas VALUES (1, 'A', true), (1, 'B', true), (2, 'A', true), (2, 'C', false);
+    call: {node_id: A}
+    expect_return: false
+    expect_sql: >
+      SELECT array_agg(active ORDER BY shard_id, node_id) = '{t,t,t,f}' FROM replicas
+  - name: shards without an active replica on the node do not block it
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2);
+      INSERT INTO replicas VALUES (1, 'A', true), (1, 'B', true), (2, 'A', false), (2, 'C', true);
+    call: {node_id: A}
+    expect_return: true
+    expect_sql: >
+      SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
+
+concurrent_scenarios:
+  - name: two drains that would together orphan a shard
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2), (3);
+      INSERT INTO replicas VALUES (1, 'A', true), (1, 'B', true),
+                                  (2, 'A', true), (2, 'C', true),
+                                  (3, 'B', true), (3, 'C', true);
+    requests:
+      - {node_id: A}
+      - {node_id: B}
+    must_all_succeed: false
+  - name: two drains of nodes sharing several shards, both fit
+    # Row order is deliberate: node A's replicas are stored shard 1 then 2,
+    # node B's shard 2 then 1.
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2);
+      INSERT INTO replicas VALUES (1, 'A', true), (2, 'B', true), (1, 'B', true), (2, 'A', true),
+                                  (1, 'C', true), (2, 'C', true);
+    requests:
+      - {node_id: A}
+      - {node_id: B}
+    must_all_succeed: true
+    success_sql:
+      - name: A and B fully drained, C still active
+        sql: >
+          SELECT bool_and(active = (node_id = 'C')) FROM replicas
+  - name: two drains of nodes with no shared shard
+    seed_sql: |
+      INSERT INTO nodes VALUES ('A', 'store-a'), ('B', 'store-b'), ('C', 'store-c');
+      INSERT INTO shards VALUES (1), (2);
+      INSERT INTO replicas VALUES (1, 'A', true), (1, 'C', true), (2, 'B', true), (2, 'C', true);
+    requests:
+      - {node_id: A}
+      - {node_id: B}
+    must_all_succeed: true
+    success_sql:
+      - name: A and B fully drained, C still active
+        sql: >
+          SELECT bool_and(active = (node_id = 'C')) FROM replicas

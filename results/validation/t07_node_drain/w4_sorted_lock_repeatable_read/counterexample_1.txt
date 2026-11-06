@@ -1,0 +1,19 @@
+scenario: two drains that would together orphan a shard
+R1: drain_node(db, node_id='A')
+R2: drain_node(db, node_id='B')
+schedule choices: [0, 0, 0, 0, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 2   R1  SELECT id FROM shards WHERE id IN (SELECT shard_id FROM replicas WHERE node_id = 'A') ORDER BY id FOR UPDATE -> [(1,), (2,)]
+step 3   R1  SELECT count(*) FROM replicas r WHERE r.node_id = 'A' AND r.active AND NOT EXISTS (SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'A' AND o.active) -> [(0,)]
+step 4   R1  UPDATE replicas SET active = false WHERE node_id = 'A' -> UPDATE 2
+step 5   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 6   R2  SELECT id FROM shards WHERE id IN (SELECT shard_id FROM replicas WHERE node_id = 'B') ORDER BY id FOR UPDATE -> blocked (waiting for R1)
+step 7   R1  COMMIT -> COMMIT
+         R1  returned True
+         R2  step 6 resumed -> [(1,), (3,)]
+step 8   R2  SELECT count(*) FROM replicas r WHERE r.node_id = 'B' AND r.active AND NOT EXISTS (SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'B' AND o.active) -> [(0,)]
+step 9   R2  UPDATE replicas SET active = false WHERE node_id = 'B' -> UPDATE 2
+step 10  R2  COMMIT -> COMMIT
+         R2  returned True
+INVARIANT VIOLATED: every shard has at least one active replica  (got [(False,)])
+reproduced on re-run: True
