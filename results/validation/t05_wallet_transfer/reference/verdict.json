@@ -1,0 +1,93 @@
+{
+  "task_id": "t05_wallet_transfer",
+  "solution": "/app/tasks/t05_wallet_transfer/reference.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "transfer within balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer within balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id, balance FROM accounts WHERE id IN (1, 2) ORDER BY id FOR UPDATE -> [(1, 100), (2, 10)]\nstep 3   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 4   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{70,40}' FROM accounts\n"
+    },
+    {
+      "name": "transfer of the whole balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer of the whole balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id, balance FROM accounts WHERE id IN (1, 2) ORDER BY id FOR UPDATE -> [(1, 30), (2, 0)]\nstep 3   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 4   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{0,30}' FROM accounts\n"
+    },
+    {
+      "name": "transfer over balance is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer over balance is refused cleanly\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id, balance FROM accounts WHERE id IN (1, 2) ORDER BY id FOR UPDATE -> [(1, 29), (2, 0)]\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{29,0}' FROM accounts\n"
+    },
+    {
+      "name": "transfer to a lower id works",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer to a lower id works\ncall: transfer(db, from_id=2, to_id=1, amount=50)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id, balance FROM accounts WHERE id IN (2, 1) ORDER BY id FOR UPDATE -> [(1, 0), (2, 50)]\nstep 3   R1  UPDATE accounts SET balance = balance - 50 WHERE id = 2 -> UPDATE 1\nstep 4   R1  UPDATE accounts SET balance = balance + 50 WHERE id = 1 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{50,0,5}' FROM accounts\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two transfers out of one account, only one fits",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.04
+    },
+    {
+      "name": "opposite transfers between two accounts",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.03
+    },
+    {
+      "name": "two transfers out of one account, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.99
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "passed": true,
+  "reproducible": true,
+  "seconds": 3.29
+}

@@ -231,3 +231,27 @@ Human chose to reclassify such checks as liveness.
 - `tasks/t04_room_booking/task.md` wording; the datetime signature.
 - Whether t02's "Chen is still on call" belongs in liveness (it encodes
   "only this doctor's row may change", stated under Behaviour).
+
+---
+
+## M3 / t05 wallet transfer (2026-11-06, Claude Code / Claude Opus 5.5)
+
+**Drafted by Claude**
+- `tasks/t05_wallet_transfer/`: task.md, setup.sql (accounts), spec.yaml
+  (4 solo checks; 3 scenarios: overdraft race, opposite transfers, two
+  debits that both fit, with per-scenario conservation invariants and
+  `success_sql`), reference (lock both rows `ORDER BY id FOR UPDATE`), four
+  wrong variants (w1 argument order no retry, w2 absolute writes, w3 stale
+  check + relative updates, w4 SERIALIZABLE retrying only 40001), NOTES.md.
+
+**Verified by Claude**
+- `make validate TASK=t05_wallet_transfer` green; all failures reproduce.
+  All four EXPECT lines were written as predictions before running.
+- Retry-based alternative reference graded ad hoc: passes.
+- Full `make validate` (all tasks) not re-run for t05; scheduled once after
+  t06 so `results/validation.md` covers every task in one run.
+
+**Human to review**
+- `tasks/t05_wallet_transfer/task.md` wording (rule 3 names "opposite
+  directions" as a valid concurrent case without naming the hazard).
+- Scoring note: a lost transfer fails both safety and liveness.

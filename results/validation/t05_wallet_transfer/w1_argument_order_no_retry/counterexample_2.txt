@@ -1,0 +1,20 @@
+scenario: opposite transfers between two accounts
+R1: transfer(db, from_id=1, to_id=2, amount=30)
+R2: transfer(db, from_id=2, to_id=1, amount=20)
+schedule choices: [0, 0, 1, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 AND balance >= 30 RETURNING id -> UPDATE 1 [(1,)]
+step 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 4   R2  UPDATE accounts SET balance = balance - 20 WHERE id = 2 AND balance >= 20 RETURNING id -> UPDATE 1 [(2,)]
+step 5   R2  UPDATE accounts SET balance = balance + 20 WHERE id = 1 -> blocked (waiting for R1)
+step 6   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1
+         R2  step 5 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected
+         R2  function ended inside an open transaction; harness rolled it back
+         R2  raised DeadlockDetected (40P01): deadlock detected
+step 7   R1  COMMIT -> COMMIT
+         R1  returned True
+invariant ok: no balance below zero
+invariant ok: money is conserved (total 200)
+SUCCESS CHECK FAILED: both transfers applied  (got [(False,)])
+warning: R2: function ended inside an open transaction; harness rolled it back
+reproduced on re-run: True

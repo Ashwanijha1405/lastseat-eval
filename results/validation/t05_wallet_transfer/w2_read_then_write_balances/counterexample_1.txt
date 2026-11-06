@@ -1,0 +1,21 @@
+scenario: two transfers out of one account, only one fits
+R1: transfer(db, from_id=1, to_id=2, amount=40)
+R2: transfer(db, from_id=1, to_id=3, amount=40)
+schedule choices: [0, 0, 0, 0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]
+step 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]
+step 4   R1  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1
+step 5   R1  UPDATE accounts SET balance = 40 WHERE id = 2 -> UPDATE 1
+step 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]
+step 8   R1  COMMIT -> COMMIT
+         R1  returned True
+step 9   R2  SELECT balance FROM accounts WHERE id = 3 -> [(0,)]
+step 10  R2  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1
+step 11  R2  UPDATE accounts SET balance = 40 WHERE id = 3 -> UPDATE 1
+step 12  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: no balance below zero
+INVARIANT VIOLATED: money is conserved (total 50)  (got [(False,)])
+reproduced on re-run: True

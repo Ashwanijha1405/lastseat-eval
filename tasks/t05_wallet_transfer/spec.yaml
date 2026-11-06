@@ -1,0 +1,65 @@
+id: t05_wallet_transfer
+title: Wallet transfer between two accounts
+entrypoint: transfer
+signature: "transfer(db, from_id: int, to_id: int, amount: int) -> bool"
+
+invariants:
+  - name: no balance below zero
+    sql: SELECT bool_and(balance >= 0) FROM accounts
+
+solo_checks:
+  - name: transfer within balance succeeds
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 100), (2, 'Bob', 10);
+    call: {from_id: 1, to_id: 2, amount: 30}
+    expect_return: true
+    expect_sql: SELECT array_agg(balance ORDER BY id) = '{70,40}' FROM accounts
+  - name: transfer of the whole balance succeeds
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 30), (2, 'Bob', 0);
+    call: {from_id: 1, to_id: 2, amount: 30}
+    expect_return: true
+    expect_sql: SELECT array_agg(balance ORDER BY id) = '{0,30}' FROM accounts
+  - name: transfer over balance is refused cleanly
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 29), (2, 'Bob', 0);
+    call: {from_id: 1, to_id: 2, amount: 30}
+    expect_return: false
+    expect_sql: SELECT array_agg(balance ORDER BY id) = '{29,0}' FROM accounts
+  - name: transfer to a lower id works
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 0), (2, 'Bob', 50), (3, 'Chen', 5);
+    call: {from_id: 2, to_id: 1, amount: 50}
+    expect_return: true
+    expect_sql: SELECT array_agg(balance ORDER BY id) = '{50,0,5}' FROM accounts
+
+concurrent_scenarios:
+  - name: two transfers out of one account, only one fits
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 50), (2, 'Bob', 0), (3, 'Chen', 0);
+    requests:
+      - {from_id: 1, to_id: 2, amount: 40}
+      - {from_id: 1, to_id: 3, amount: 40}
+    must_all_succeed: false
+    invariants:
+      - name: money is conserved (total 50)
+        sql: SELECT sum(balance) = 50 FROM accounts
+  - name: opposite transfers between two accounts
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 100), (2, 'Bob', 100);
+    requests:
+      - {from_id: 1, to_id: 2, amount: 30}
+      - {from_id: 2, to_id: 1, amount: 20}
+    must_all_succeed: true
+    invariants:
+      - name: money is conserved (total 200)
+        sql: SELECT sum(balance) = 200 FROM accounts
+    success_sql:
+      - name: both transfers applied
+        sql: SELECT array_agg(balance ORDER BY id) = '{90,110}' FROM accounts
+  - name: two transfers out of one account, both fit
+    seed_sql: INSERT INTO accounts VALUES (1, 'Alice', 100), (2, 'Bob', 0), (3, 'Chen', 0);
+    requests:
+      - {from_id: 1, to_id: 2, amount: 30}
+      - {from_id: 1, to_id: 3, amount: 30}
+    must_all_succeed: true
+    invariants:
+      - name: money is conserved (total 100)
+        sql: SELECT sum(balance) = 100 FROM accounts
+    success_sql:
+      - name: both transfers applied
+        sql: SELECT array_agg(balance ORDER BY id) = '{40,30,30}' FROM accounts
