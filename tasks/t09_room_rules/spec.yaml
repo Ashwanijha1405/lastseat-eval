@@ -1,0 +1,246 @@
+id: t09_room_rules
+title: Room bookings, reschedules and cancellations under two rules
+entrypoints: [book, reschedule, cancel]
+signature: >-
+  book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool;
+  reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool;
+  cancel(db, booking_id: int) -> bool
+
+# Days used below: D1 = 2026-11-09, D2 = 2026-11-10, D3 = 2026-11-11 (UTC).
+# Bookings are seeded without ids; identity gives them 1, 2, 3, ... in insert
+# order, noted as "-- id N".
+seed_state_sql: |
+  INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+
+invariants:
+  - name: no two bookings of the same room overlap
+    sql: >
+      SELECT NOT EXISTS (
+        SELECT 1 FROM bookings a JOIN bookings b
+          ON a.room_id = b.room_id AND a.id < b.id
+         AND a.starts_at < b.ends_at AND b.starts_at < a.ends_at)
+  - name: no room has more than 3 bookings on a UTC day
+    sql: >
+      SELECT NOT EXISTS (
+        SELECT 1 FROM bookings
+        GROUP BY room_id, (starts_at AT TIME ZONE 'UTC')::date
+        HAVING count(*) > 3)
+
+solo_checks:
+  # book
+  - name: a free slot is booked
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-09T10:00:00Z, ends_at: 2026-11-09T11:00:00Z}}
+    expect_return: true
+    expect_sql: >
+      SELECT count(*) = 1 AND bool_and(room_id = 1 AND starts_at = '2026-11-09T10:00:00Z'
+                                       AND ends_at = '2026-11-09T11:00:00Z') FROM bookings
+  - name: an overlapping booking is refused cleanly
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-09T10:30:00Z, ends_at: 2026-11-09T11:30:00Z}}
+    expect_return: false
+    expect_sql: SELECT count(*) = 1 FROM bookings
+  - name: a back-to-back booking is allowed
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-09T11:00:00Z, ends_at: 2026-11-09T12:00:00Z}}
+    expect_return: true
+    expect_sql: SELECT count(*) = 2 FROM bookings
+  - name: a fourth booking on the same day is refused cleanly
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z'),
+        (1, '2026-11-09T11:00:00Z', '2026-11-09T12:00:00Z');
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-09T15:00:00Z, ends_at: 2026-11-09T16:00:00Z}}
+    expect_return: false
+    expect_sql: SELECT count(*) = 3 FROM bookings
+  - name: the day is the UTC day, whatever offset the time is given in
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z'),
+        (1, '2026-11-09T11:00:00Z', '2026-11-09T12:00:00Z');
+    # 01:00+05:30 on Nov 10 is 19:30 UTC on Nov 9, a day that is already full.
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-10T01:00:00+05:30, ends_at: 2026-11-10T02:00:00+05:30}}
+    expect_return: false
+    expect_sql: SELECT count(*) = 3 FROM bookings
+  - name: another room's bookings do not count
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (2, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),
+        (2, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z'),
+        (2, '2026-11-09T11:00:00Z', '2026-11-09T12:00:00Z');
+    call: {fn: book, args: {room_id: 1, starts_at: 2026-11-09T09:00:00Z, ends_at: 2026-11-09T10:00:00Z}}
+    expect_return: true
+    expect_sql: SELECT count(*) = 1 FROM bookings WHERE room_id = 1
+  # reschedule
+  - name: a booking moves to a free slot on another day
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'); -- id 1
+    call: {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T14:00:00Z, new_ends_at: 2026-11-10T15:00:00Z}}
+    expect_return: true
+    expect_sql: >
+      SELECT count(*) = 1 AND bool_and(id = 1 AND starts_at = '2026-11-10T14:00:00Z'
+                                       AND ends_at = '2026-11-10T15:00:00Z') FROM bookings
+  - name: a booking moves within a full day (it does not count against itself)
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z'),  -- id 2
+        (1, '2026-11-09T11:00:00Z', '2026-11-09T12:00:00Z');  -- id 3
+    call: {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-09T15:00:00Z, new_ends_at: 2026-11-09T16:00:00Z}}
+    expect_return: true
+    expect_sql: SELECT starts_at = '2026-11-09T15:00:00Z' FROM bookings WHERE id = 1
+  - name: a booking may overlap its own old slot
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z'); -- id 1
+    call: {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-09T10:30:00Z, new_ends_at: 2026-11-09T11:30:00Z}}
+    expect_return: true
+    expect_sql: SELECT starts_at = '2026-11-09T10:30:00Z' AND ends_at = '2026-11-09T11:30:00Z' FROM bookings WHERE id = 1
+  - name: a move into a full day is refused cleanly
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'),  -- id 2
+        (1, '2026-11-10T10:00:00Z', '2026-11-10T11:00:00Z'),  -- id 3
+        (1, '2026-11-10T11:00:00Z', '2026-11-10T12:00:00Z');  -- id 4
+    call: {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T15:00:00Z, new_ends_at: 2026-11-10T16:00:00Z}}
+    expect_return: false
+    expect_sql: SELECT starts_at = '2026-11-09T09:00:00Z' FROM bookings WHERE id = 1
+  - name: a move onto another booking is refused cleanly
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-10T14:00:00Z', '2026-11-10T15:00:00Z');  -- id 2
+    call: {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T14:30:00Z, new_ends_at: 2026-11-10T15:30:00Z}}
+    expect_return: false
+    expect_sql: SELECT starts_at = '2026-11-09T09:00:00Z' FROM bookings WHERE id = 1
+  - name: rescheduling a booking that does not exist returns False
+    call: {fn: reschedule, args: {booking_id: 7, new_starts_at: 2026-11-10T14:00:00Z, new_ends_at: 2026-11-10T15:00:00Z}}
+    expect_return: false
+    expect_sql: SELECT count(*) = 0 FROM bookings
+  # cancel
+  - name: a booking is cancelled
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');  -- id 2
+    call: {fn: cancel, args: {booking_id: 1}}
+    expect_return: true
+    expect_sql: SELECT array_agg(id) = '{2}' FROM bookings
+  - name: cancelling a booking that does not exist returns False
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'); -- id 1
+    call: {fn: cancel, args: {booking_id: 7}}
+    expect_return: false
+    expect_sql: SELECT count(*) = 1 FROM bookings
+
+concurrent_scenarios:
+  # Each request below would succeed on its own; together they would break a rule.
+  - name: two bookings for the last place of a day
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');
+    requests:
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T13:00:00Z, ends_at: 2026-11-09T14:00:00Z}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T15:00:00Z, ends_at: 2026-11-09T16:00:00Z}}
+    must_all_succeed: false
+  - name: two overlapping bookings of a free slot
+    requests:
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T09:00:00Z, ends_at: 2026-11-09T10:00:00Z}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T09:30:00Z, ends_at: 2026-11-09T10:30:00Z}}
+    must_all_succeed: false
+  - name: a move from another day and a booking, for the last place of a day
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1, on D1
+        (1, '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'),  -- id 2
+        (1, '2026-11-10T10:00:00Z', '2026-11-10T11:00:00Z');  -- id 3
+    requests:
+      - {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T13:00:00Z, new_ends_at: 2026-11-10T14:00:00Z}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-10T15:00:00Z, ends_at: 2026-11-10T16:00:00Z}}
+    must_all_succeed: false
+  - name: two moves from different days, for the last place of a day
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1, on D1
+        (1, '2026-11-11T09:00:00Z', '2026-11-11T10:00:00Z'),  -- id 2, on D3
+        (1, '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'),  -- id 3
+        (1, '2026-11-10T10:00:00Z', '2026-11-10T11:00:00Z');  -- id 4
+    requests:
+      - {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T13:00:00Z, new_ends_at: 2026-11-10T14:00:00Z}}
+      - {fn: reschedule, args: {booking_id: 2, new_starts_at: 2026-11-10T15:00:00Z, new_ends_at: 2026-11-10T16:00:00Z}}
+    must_all_succeed: false
+  - name: a move from another day and a booking, onto the same slot
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'); -- id 1
+    requests:
+      - {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T14:00:00Z, new_ends_at: 2026-11-10T15:00:00Z}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-10T14:30:00Z, ends_at: 2026-11-10T15:30:00Z}}
+    must_all_succeed: false
+  # These fit in either order, so every request must return True.
+  - name: two moves between two days in opposite directions, both fit
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1, D1 -> D2
+        (1, '2026-11-09T11:00:00Z', '2026-11-09T12:00:00Z'),  -- id 2
+        (1, '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'),  -- id 3, D2 -> D1
+        (1, '2026-11-10T11:00:00Z', '2026-11-10T12:00:00Z');  -- id 4
+    requests:
+      - {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-10T14:00:00Z, new_ends_at: 2026-11-10T15:00:00Z}}
+      - {fn: reschedule, args: {booking_id: 3, new_starts_at: 2026-11-09T14:00:00Z, new_ends_at: 2026-11-09T15:00:00Z}}
+    must_all_succeed: true
+    success_sql:
+      - name: booking 1 is on Nov 10 at 14:00 and booking 3 on Nov 9 at 14:00
+        sql: >
+          SELECT (SELECT starts_at = '2026-11-10T14:00:00Z' FROM bookings WHERE id = 1)
+             AND (SELECT starts_at = '2026-11-09T14:00:00Z' FROM bookings WHERE id = 3)
+  - name: a cancellation and a booking on the same day, both fit
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');  -- id 2
+    requests:
+      - {fn: cancel, args: {booking_id: 1}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T13:00:00Z, ends_at: 2026-11-09T14:00:00Z}}
+    must_all_succeed: true
+    success_sql:
+      - name: booking 1 is gone and the 13:00 booking exists
+        sql: >
+          SELECT NOT EXISTS (SELECT 1 FROM bookings WHERE id = 1)
+             AND EXISTS (SELECT 1 FROM bookings WHERE starts_at = '2026-11-09T13:00:00Z')
+  - name: a move within a day and a booking on that day, both fit
+    seed_sql: |
+      INSERT INTO rooms VALUES (1, 'Everest'), (2, 'Kilimanjaro');
+      INSERT INTO bookings (room_id, starts_at, ends_at) VALUES
+        (1, '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z'),  -- id 1
+        (1, '2026-11-09T10:00:00Z', '2026-11-09T11:00:00Z');  -- id 2
+    requests:
+      - {fn: reschedule, args: {booking_id: 1, new_starts_at: 2026-11-09T15:00:00Z, new_ends_at: 2026-11-09T16:00:00Z}}
+      - {fn: book, args: {room_id: 1, starts_at: 2026-11-09T12:00:00Z, ends_at: 2026-11-09T13:00:00Z}}
+    must_all_succeed: true
+    success_sql:
+      - name: booking 1 moved to 15:00 and the 12:00 booking exists
+        sql: >
+          SELECT (SELECT starts_at = '2026-11-09T15:00:00Z' FROM bookings WHERE id = 1)
+             AND EXISTS (SELECT 1 FROM bookings WHERE starts_at = '2026-11-09T12:00:00Z')
