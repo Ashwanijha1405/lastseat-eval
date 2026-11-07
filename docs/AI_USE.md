@@ -578,3 +578,39 @@ cell gets a failure category (concurrency / spec / load).
 **Human to review**
 - The category precedence (a real counterexample beats a solo failure; a solo
   failure beats liveness-only, so "every call raises" is spec, not concurrency).
+
+## Runner: never start a new run implicitly (2026-11-07)
+
+**Why.** The scheduled Gemma retry ran `pilot -Yes -Jobs 2` expecting to
+resume 20261106T123821Z. t08/t09 had been added since, so the task list no
+longer matched; the runner silently started run 20261107T001717Z and asked
+Nemotron 9 tasks the human had not authorized (free, $0). Human decision: refuse
+instead, require an explicit `--new`.
+
+**Claude drafted**
+- `runner.find_resumable` now returns (run to resume, refusal). Without
+  `--run-id`/`--new`, a run resumes only an unfinished run with exactly the same
+  config, models, tasks and trials. If the newest unfinished run of the config
+  differs, it refuses and lists what differs (tasks/models added or only in that
+  run, trials) and both ways forward; with no unfinished run at all it refuses
+  and asks for `--new`. Dry runs (no model calls) are exempt and always fresh.
+- "cell(s) still missing" and the quota note now name the run
+  (`--run-id <id>`) instead of "re-run the same command" (which, after a
+  `--new`, would start yet another run).
+- run_meta `notes` survive a resume and are shown at the top of summary.md.
+  20261107T001717Z carries a note marking it as the extra, unplanned pilot.
+- Fixed `.\run.ps1` in two Python message strings: `\r` was a carriage return.
+- Tests: refusal on an added task and on a swapped model (no request sent, no
+  new directory; `--new` then works); refusal with no unfinished run; an exact
+  match resumes and keeps its notes. Disabling the rule fails 5 tests.
+
+**Verified by Claude**
+- Live: `.\run.ps1 pilot` now refuses, naming 20261107T001717Z (gemma there,
+  cohere now). 99 tests pass.
+
+**Human to review**
+- 20261107T001717Z stays unfinished (Gemma cells missing), so every free
+  pilot/run command without `-Run`/`-New` is refused until one is given.
+- Limitation to write up later (human decision 3): liveness checks only that
+  fitting requests succeed, not that they could run in parallel; a coarse lock
+  (t09: whole room instead of room-day) scores the same as the reference.

@@ -1,5 +1,7 @@
 # Run 20261107T001717Z (free, 1 trial(s))
 
+> Note: Extra pilot run, not planned. Started by accident on 2026-11-07 00:17 UTC: the scheduled Gemma retry re-ran `pilot -Yes -Jobs 2` expecting to resume 20261106T123821Z, but t08/t09 had been added, so the task list no longer matched and the runner started a new run. It asked Nemotron all 9 tasks (9 free requests, $0) before Gemma was refused (429 rate-limited upstream). Kept by the human's decision as an extra Nemotron trial.
+
 | task | nemotron-3-ultra | gemma-4-31b |
 |---|---|---|
 | t01_flash_sale | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing (api error) |

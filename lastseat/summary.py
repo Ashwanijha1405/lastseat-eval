@@ -66,6 +66,8 @@ def summarize(run: Path) -> str:
     tasks = meta["tasks"]
     cells = {(m, t): _trials(run, m, t) for m in models for t in tasks}
     out = [f"# Run {meta['run_id']} ({meta.get('tier')}, {meta['trials']} trial(s))", ""]
+    if meta.get("notes"):
+        out += [f"> Note: {meta['notes']}", ""]
 
     out += ["| task | " + " | ".join(models) + " |", "|---|" + "---|" * len(models)]
     for t in tasks:

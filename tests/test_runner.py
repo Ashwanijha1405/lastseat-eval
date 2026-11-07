@@ -252,7 +252,7 @@ def test_rate_limit_stops_without_a_verdict_and_the_same_command_resumes(tmp_pat
     sent = _fake_post(monkeypatch, [FREE_OK, minute])
     argv = ["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(_free_config(tmp_path))]
 
-    assert runner.main(argv) == 1
+    assert runner.main(argv + ["--new"]) == 1
     [first] = [p for p in free_env.iterdir() if p.is_dir()]
     run_dir = first.rename(free_env / "an-earlier-run")  # so a fresh timestamped run could not land on it
     t01, t02 = run_dir / "m0" / "t01_flash_sale" / "trial_1", run_dir / "m0" / "t02_on_call" / "trial_1"
@@ -260,7 +260,7 @@ def test_rate_limit_stops_without_a_verdict_and_the_same_command_resumes(tmp_pat
     assert not (t02 / "verdict.json").exists(), "a 429 must never be scored as a model failure"
     assert "rate_limited" in (t02 / "api_error.txt").read_text(encoding="utf-8")
     assert len(sent) == 1 + 4  # 1 answer + 4 attempts at the 429
-    assert "Re-run the same command" in capsys.readouterr().out
+    assert f"Continue this run with --run-id {first.name}" in capsys.readouterr().out
 
     sent.clear()
     _fake_post(monkeypatch, [FREE_OK])
@@ -271,6 +271,52 @@ def test_rate_limit_stops_without_a_verdict_and_the_same_command_resumes(tmp_pat
     assert meta["complete"] is True and len(meta["sessions"]) == 2
     assert [s["api_calls"] for s in meta["sessions"]] == [1, 1]
     assert json.loads((free_env / ".free_quota.json").read_text(encoding="utf-8"))["requests"] == 6
+
+
+def _unfinished_run(results, run_id, config, tasks, models, complete=False, **extra):
+    sig = {"config": runner._rel(config), "models": models, "tasks": tasks, "trials": 1, "dry_run": False}
+    (results / run_id).mkdir()
+    (results / run_id / "run_meta.json").write_text(
+        json.dumps({"run_id": run_id, "signature": sig, "complete": complete, **extra}), encoding="utf-8")
+
+
+@pytest.mark.parametrize("tasks, models, expected", [
+    (["t01_flash_sale"], [FREE_ID], "tasks added now: t02_on_call"),          # a task was added since
+    (["t01_flash_sale", "t02_on_call"], ["lab/other:free"], "models added now: " + FREE_ID),  # model swapped
+])
+def test_a_changed_task_or_model_list_is_refused_not_started_as_a_new_run(
+        tmp_path, monkeypatch, free_env, capsys, tasks, models, expected):
+    config = _free_config(tmp_path)
+    _unfinished_run(free_env, "old", config, tasks, models)
+    sent = _fake_post(monkeypatch, [FREE_OK])
+    argv = ["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(config)]
+
+    assert runner.main(argv) == 2
+    out = capsys.readouterr().out
+    assert "refusing to start a new run implicitly" in out and "old" in out and expected in out
+    assert "--new" in out and "--run-id old" in out
+    assert sent == [] and sorted(p.name for p in free_env.iterdir() if p.is_dir()) == ["old"]
+
+    assert runner.main(argv + ["--new"]) == 0  # an explicit --new starts one
+    assert len(sent) == 2 and len([p for p in free_env.iterdir() if p.is_dir()]) == 2
+
+
+def test_with_no_unfinished_run_a_new_one_needs_new(tmp_path, monkeypatch, free_env, capsys):
+    config = _free_config(tmp_path)
+    _unfinished_run(free_env, "done", config, ["t01_flash_sale", "t02_on_call"], [FREE_ID], complete=True)
+    sent = _fake_post(monkeypatch, [FREE_OK])
+    assert runner.main(["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(config)]) == 2
+    assert "no unfinished run" in capsys.readouterr().out and sent == []
+
+
+def test_an_exact_match_is_resumed_and_its_notes_survive(tmp_path, monkeypatch, free_env):
+    config = _free_config(tmp_path)
+    _unfinished_run(free_env, "old", config, ["t01_flash_sale", "t02_on_call"], [FREE_ID], notes="extra pilot")
+    _fake_post(monkeypatch, [FREE_OK])
+    assert runner.main(["run", "--trials", "1", "--yes", *TWO_TASKS, "--config", str(config)]) == 0
+    assert [p.name for p in free_env.iterdir() if p.is_dir()] == ["old"]
+    meta = json.loads((free_env / "old" / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["complete"] is True and meta["notes"] == "extra pilot"
 
 
 def test_run_stops_cleanly_when_the_daily_quota_is_used_up(tmp_path, monkeypatch, free_env):

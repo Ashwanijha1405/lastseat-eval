@@ -60,8 +60,9 @@ switch ($Command) {
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
             "  run/pilot options: -Config free|paid (default free) -Run <id> -New -From <pilot id>",
-            "  Re-running the same pilot/run command resumes its newest unfinished run (-New: fresh).",
-            "                     -Jobs <n> -Task <id>[,<id>] -Model <slug>[,<slug>]"
+            "                     -Jobs <n> -Task <id>[,<id>] -Model <slug>[,<slug>]",
+            "  A pilot/run resumes only an unfinished run with the same tasks, models and trials;",
+            "  anything else is refused: -Run <id> continues a named run, -New starts a fresh one."
         ) | ForEach-Object { Write-Output $_ }
     }
     "up" { Start-Db }

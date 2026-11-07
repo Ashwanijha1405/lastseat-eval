@@ -577,7 +577,7 @@ def run(args: argparse.Namespace) -> int:
     else:
         if not config.confirmed:
             print(f"refusing to call models: {config.path} has confirmed: false.\n"
-                  "Run `make models` (or .\run.ps1 models), check every ID and price, then set confirmed: true.")
+                  "Run `make models` (or .\\run.ps1 models), check every ID and price, then set confirmed: true.")
             return 2
         key = os.environ.get("OPENROUTER_API_KEY", "").strip()
         limit = os.environ.get("LASTSEAT_MAX_COST_USD", "").strip()
@@ -619,7 +619,12 @@ def run(args: argparse.Namespace) -> int:
 
     signature = {"config": _rel(config.path), "models": [m.id for m in models], "tasks": [t.id for t in tasks],
                  "trials": args.trials, "dry_run": args.dry_run}
-    run_id = args.run_id or (None if args.new else find_resumable(signature))
+    run_id = args.run_id
+    if not run_id and not args.new and not args.dry_run:  # a dry run makes no model calls: always fresh
+        run_id, refusal = find_resumable(signature)
+        if refusal:
+            print(refusal)
+            return 2
     resuming = run_id is not None and (RESULTS / run_id / "run_meta.json").exists()
     run_id = run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + (
         "-dry" if args.dry_run else "")
@@ -640,7 +645,7 @@ def run(args: argparse.Namespace) -> int:
                                             else "  [OpenRouter /key unavailable; local count only]"))
         if quota.remaining() < len(todo):
             print(f"  note: {len(todo)} cells to ask but only {quota.remaining()} requests left today; the run "
-                  "will stop cleanly when they are used up. Re-run the same command after 00:00 UTC.")
+                  f"will stop cleanly when they are used up. Continue after 00:00 UTC with --run-id {run_id}.")
         gate = FreeGate(quota, RateLimiter(float(config.limits["min_interval_s"]), sleep=_sleep))
         client.gate = gate
         client.max_attempts = int(config.limits["max_attempts"])
@@ -665,6 +670,7 @@ def run(args: argparse.Namespace) -> int:
         "postgres_version": postgres_version(), "scheduler_caps": SCHEDULER_CAPS,
         "grading_jobs": args.jobs, "budget_limit_usd": max_usd, "complete": False,
         "sessions": prior.get("sessions", []) + [{"started_utc": now, "git_commit": git_commit()}],
+        **({"notes": prior["notes"]} if "notes" in prior else {}),  # human notes survive a resume
     }, Budget(max_usd, spent_usd=float(prior.get("spent_usd", 0.0))),
         calls=int(prior.get("api_calls", 0)), calls_before=int(prior.get("api_calls", 0)))
     state.save_meta()
@@ -701,7 +707,8 @@ def run(args: argparse.Namespace) -> int:
     if gate:
         print(f"free-model requests left today: {gate.quota.remaining()} of {gate.quota.limit}")
     if missing:
-        print(f"{missing} cell(s) still missing. Re-run the same command to continue this run.")
+        print(f"{missing} cell(s) still missing. Continue this run with --run-id {run_id} "
+              f"(.\\run.ps1 ... -Run {run_id}, make ... RUN={run_id}).")
     return 1 if state.budget.stopped_reason else 0
 
 
@@ -709,17 +716,53 @@ def _rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
 
 
-def find_resumable(signature: dict[str, Any]) -> str | None:
-    """Newest unfinished run started with the same config, models, tasks and trials."""
-    metas = sorted(RESULTS.glob("*/run_meta.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for meta_file in metas:
+def _unfinished_runs(config: str, dry_run: bool) -> list[tuple[str, dict[str, Any]]]:
+    """Unfinished runs of this config, newest first, as (run_id, signature)."""
+    out = []
+    for meta_file in sorted(RESULTS.glob("*/run_meta.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if meta.get("signature") == signature and not meta.get("complete"):
-            return meta_file.parent.name
-    return None
+        sig = meta.get("signature") or {}
+        if not meta.get("complete") and sig.get("config") == config and bool(sig.get("dry_run")) == dry_run:
+            out.append((meta_file.parent.name, sig))
+    return out
+
+
+def _differences(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
+    out = []
+    for key in ("tasks", "models"):
+        added = [x for x in new.get(key, []) if x not in old.get(key, [])]
+        removed = [x for x in old.get(key, []) if x not in new.get(key, [])]
+        if added:
+            out.append(f"{key} added now: {', '.join(added)}")
+        if removed:
+            out.append(f"{key} only in that run: {', '.join(removed)}")
+    if old.get("trials") != new.get("trials"):
+        out.append(f"trials {old.get('trials')} there, {new.get('trials')} now")
+    return out
+
+
+def find_resumable(signature: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(run to resume, None), or (None, why this command needs an explicit --new or --run-id).
+
+    Only an unfinished run with exactly this config, models, tasks and trials is
+    resumed. Anything else is refused rather than silently starting a new run:
+    a new run asks every cell again, which spends requests.
+    """
+    runs = _unfinished_runs(signature["config"], bool(signature.get("dry_run")))
+    for run_id, sig in runs:
+        if sig == signature:
+            return run_id, None
+    if runs:
+        run_id, sig = runs[0]
+        return None, (f"refusing to start a new run implicitly: the newest unfinished run of this config, {run_id}, "
+                      "does not match this command:\n  " + "\n  ".join(_differences(sig, signature) or ["(other)"])
+                      + f"\nPass --run-id {run_id} to continue that run with this command's tasks and models "
+                      "(.\\run.ps1 ... -Run <id>, make ... RUN=<id>), or --new (-New, NEW=1) to start a fresh one.")
+    return None, ("refusing to start a new run implicitly: there is no unfinished run of this config to resume.\n"
+                  "Pass --new (.\\run.ps1 ... -New, make ... NEW=1) to start one.")
 
 
 def quota_cmd(args: argparse.Namespace) -> int:
@@ -792,9 +835,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--model", action="append", help="model slug (repeatable); default all")
     r.add_argument("--dry-run", action="store_true", help="mock model returning the reference; $0")
     r.add_argument("--yes", action="store_true", help="start the run after printing the estimate")
-    r.add_argument("--run-id", help="results/<run-id>; default: resume the newest unfinished run of the same "
-                                    "config, models, tasks and trials, else start a new one")
-    r.add_argument("--new", action="store_true", help="start a new run even if an unfinished one matches")
+    r.add_argument("--run-id", help="results/<run-id>, created or continued; default: resume the unfinished run with "
+                                    "exactly this config, models, tasks and trials, else refuse")
+    r.add_argument("--new", action="store_true", help="start a new run (never done implicitly)")
     r.add_argument("--estimate-from", help="earlier run id whose token counts drive the estimate")
     r.add_argument("--jobs", type=int, default=1, help="solutions graded in parallel")
     q = sub.add_parser("quota", help="free-model requests used and left today")

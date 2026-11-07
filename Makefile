@@ -21,6 +21,7 @@ help:
 	@echo "make dry-run  whole pipeline with a mock model that returns the references (\$$0)"
 	@echo "make pilot    1 trial per model and task; prints the estimate; add YES=1 to start"
 	@echo "make run      5 trials; options: CONFIG=free|paid (default free) YES=1 NEW=1 RUN=<id> FROM=<pilot id> JOBS=<n>"
+	@echo "             resumes only an unfinished run with the same tasks, models, trials; else refuses: RUN=<id> or NEW=1"
 	@echo "make psql   open psql on the db container"
 	@echo "make shell  bash inside the eval container"
 
