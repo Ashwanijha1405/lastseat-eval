@@ -1,0 +1,39 @@
+The database enforces the no-overlap rule with a GiST exclusion constraint, added in `migrate`. `book_room` simply attempts the insert and returns `False` if the constraint rejects it. Because the constraint works on half-open ranges (`'[)'`), back-to-back bookings don't conflict. If a concurrent insert for an overlapping slot is still uncommitted, PostgreSQL makes this insert wait for it: if that one commits, this request is correctly refused, and if it rolls back, this request goes through. This never refuses a request that would succeed sequentially.
+
+```python
+from datetime import datetime
+
+from psycopg.errors import ExclusionViolation
+
+
+def migrate(db) -> None:
+    # btree_gist is a trusted extension, so the database owner can create it.
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # Half-open ranges: [starts_at, ends_at). Adjacent bookings do not overlap.
+    db.execute(
+        "ALTER TABLE bookings ADD CONSTRAINT bookings_no_room_overlap "
+        "EXCLUDE USING gist ("
+        "room_id WITH =, "
+        "tstzrange(starts_at, ends_at, '[)') WITH &&"
+        ")"
+    )
+
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    db.begin()
+    try:
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at),
+        )
+        db.commit()
+        return True
+    except ExclusionViolation:
+        db.rollback()
+        return False
+```
+
+Choices I made:
+- **Enforcement is in the database, not a read-then-write check.** A `SELECT` followed by an `INSERT` would let two concurrent requests both see the slot as free. The constraint closes that gap without needing `SERIALIZABLE` or retries.
+- **No retry loop.** The constraint's only failure mode is a real overlap, so retrying would never change the result.
+- **`migrate` assumes the existing data has no overlapping bookings per room.** If it does, the `ALTER TABLE` fails. I didn't add handling for that, since the right resolution depends on which bookings to keep.

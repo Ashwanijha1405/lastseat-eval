@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 28311,
+  "stop_reason": "end_turn",
+  "session_id": "8f56faf0-514d-437e-8703-093ce5848862",
+  "total_cost_usd": 0.00321567,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 383,
+    "cache_read_input_tokens": 5487,
+    "output_tokens": 6168,
+    "output_tokens_details": {
+      "thinking_tokens": 5067
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 383,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 6168,
+        "cache_read_input_tokens": 5487,
+        "cache_creation_input_tokens": 383,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 383
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 6168,
+      "cacheReadInputTokens": 5487,
+      "cacheCreationInputTokens": 383,
+      "webSearchRequests": 0,
+      "costUSD": 0.00321567,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 5067,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 383,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The approach is to lock every shard that this node has a replica on, in ascending id order, before checking and deactivating. Any other drain that touches one of those shards must hold the same lock, so the check always sees a settled state. Drains on disjoint shards never wait on each other. Because the locks are always taken in the same order, they cannot deadlock.\n\n```python\nfrom psycopg import errors\n\n_MAX_ATTEMPTS = 10\n\n\ndef drain_node(db, node_id: str) -> bool:\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin()\n\n            # Lock every shard this node has a replica of, in ascending id order.\n            # Any drain that changes replicas of one of these shards must hold the\n            # same shard lock, so the check below cannot race with another drain.\n            # The fixed lock order prevents deadlocks between drains.\n            db.execute(\n                \"\"\"\n                SELECT s.id\n                FROM shards s\n                WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %s)\n                ORDER BY s.id\n                FOR UPDATE OF s\n                \"\"\",\n                (node_id,),\n            )\n\n            # Under the shard locks, this statement sees the committed state of\n            # every shard this node touches. Is there any shard where this node is\n            # active and no other node is active?\n            blocked = db.execute(\n                \"\"\"\n                SELECT EXISTS (\n                    SELECT 1\n                    FROM replicas mine\n                    WHERE mine.node_id = %s\n                      AND mine.active\n                      AND NOT EXISTS (\n                          SELECT 1\n                          FROM replicas other\n                          WHERE other.shard_id = mine.shard_id\n                            AND other.node_id <> %s\n                            AND other.active\n                      )\n                )\n                \"\"\",\n                (node_id, node_id),\n            )[0][0]\n\n            if blocked:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE replicas SET active = false WHERE node_id = %s AND active\",\n                (node_id,),\n            )\n            db.commit()\n            return True\n\n        except (errors.DeadlockDetected, errors.SerializationFailure):\n            db.rollback()\n            continue\n\n    # Retries should not be exhausted with ordered locking; raise rather than\n    # return a answer that might be wrong.\n    raise RuntimeError(\"drain_node: retry limit exceeded\")\n```\n\nDesign notes:\n\n- **Why the shard lock is enough:** only drains of a node change that node's `active` flags, and a drain of node X can only affect shard S if X has a replica of S. So any transaction that changes replicas of S must have locked shard S first. Under read committed, each statement takes a fresh snapshot, so once the lock is held the check sees the latest committed state.\n- **Equivalence to a serial order:** two drains that share no shard never interact. Two drains that share a shard serialize on its lock, so the outcome matches running them one after the other. Drains that would succeed serially therefore all return `True`.\n- **Call budget:** a single attempt uses at most five `db` calls (begin, three executes, and a commit or rollback), so ten attempts stay within the 60-call limit.\n- **Not tested:** I have not run this against a PostgreSQL 16 server. The reasoning is from the locking semantics above.",
+  "ttft_ms": 24745,
+  "type": "result",
+  "duration_ms": 28497,
+  "uuid": "c55450dd-7588-47f6-a0cb-bb66b7d6c7c2",
+  "ttft_stream_ms": 923,
+  "time_to_request_ms": 185,
+  "first_content_frame_ms": 923,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

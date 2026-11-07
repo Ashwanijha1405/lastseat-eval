@@ -1,0 +1,38 @@
+The conditional `UPDATE` does the stock check and the decrement in one statement, so concurrent purchases queue on the row lock instead of failing. Each request touches only one product row, so there are no deadlocks and no retries are needed. I haven't run this against PostgreSQL here.
+
+```python
+def purchase(db, product_id: int, qty: int) -> bool:
+    db.begin()
+    try:
+        # The stock check and decrement happen in one statement. In READ COMMITTED,
+        # a concurrent purchase waits on the row lock, then re-evaluates
+        # `stock >= qty` against the committed value, so stock never goes negative
+        # and fitting purchases are never refused just because they overlapped.
+        rows = db.execute(
+            "UPDATE products SET stock = stock - %s "
+            "WHERE id = %s AND stock >= %s "
+            "RETURNING id",
+            (qty, product_id, qty),
+        )
+        if not rows:
+            # Not enough stock: change nothing and refuse.
+            db.rollback()
+            return False
+
+        # The decrement and the order row commit together, so every unit that
+        # leaves stock is recorded by an order.
+        db.execute(
+            "INSERT INTO orders (product_id, qty) VALUES (%s, %s)",
+            (product_id, qty),
+        )
+        db.commit()
+        return True
+    except BaseException:
+        db.rollback()
+        raise
+```
+
+Choices I made:
+- **Isolation level:** I kept the default READ COMMITTED. REPEATABLE READ or SERIALIZABLE would make concurrent updates to the same row raise serialization failures, which would break rule 3 without retries.
+- **No `migrate`:** The query needs no extra index, and I didn't add a `CHECK (stock >= 0)` because it would fail on existing data that already violates it. The `WHERE` guard is what enforces rule 1.
+- **Call count:** Each request makes at most four `db` calls (begin, update, insert, commit), well under the limit of 60.

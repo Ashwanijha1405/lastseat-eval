@@ -1,0 +1,125 @@
+{
+  "task_id": "t05_wallet_transfer",
+  "solution": "results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t05_wallet_transfer/trial_1/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "transfer within balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer within balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(10,)]\nstep 5   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 6   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{70,40}' FROM accounts\n"
+    },
+    {
+      "name": "transfer of the whole balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer of the whole balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(30,)]\nstep 4   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 5   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 6   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{0,30}' FROM accounts\n"
+    },
+    {
+      "name": "transfer over balance is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer over balance is refused cleanly\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 4   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 5   R1  ROLLBACK -> ROLLBACK\nstep 6   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R1  SELECT pg_advisory_xact_lock(7310, 1) -> [('',)]\nstep 8   R1  COMMIT -> COMMIT\nstep 9   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 10  R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 11  R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 12  R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 13  R1  ROLLBACK -> ROLLBACK\nstep 14  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 15  R1  SELECT pg_advisory_xact_lock(7310, 1) -> [('',)]\nstep 16  R1  COMMIT -> COMMIT\nstep 17  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 18  R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 19  R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 20  R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 21  R1  ROLLBACK -> ROLLBACK\nstep 22  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 23  R1  SELECT pg_advisory_xact_lock(7310, 1) -> [('',)]\nstep 24  R1  COMMIT -> COMMIT\nstep 25  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 26  R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 27  R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 28  R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 29  R1  ROLLBACK -> ROLLBACK\nstep 30  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 31  R1  SELECT pg_advisory_xact_lock(7310, 1) -> [('',)]\nstep 32  R1  COMMIT -> COMMIT\nstep 33  R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 34  R1  SELECT pg_advisory_xact_lock_shared(7310, 2) -> [('',)]\nstep 35  R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 36  R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 37  R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{29,0}' FROM accounts\n"
+    },
+    {
+      "name": "transfer to a lower id works",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer to a lower id works\ncall: transfer(db, from_id=2, to_id=1, amount=50)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock_shared(7310, 1) -> [('',)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(0,)]\nstep 4   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(50,)]\nstep 5   R1  UPDATE accounts SET balance = balance - 50 WHERE id = 2 -> UPDATE 1\nstep 6   R1  UPDATE accounts SET balance = balance + 50 WHERE id = 1 -> UPDATE 1\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{50,0,5}' FROM accounts\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two transfers out of one account, only one fits",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 220,
+      "dfs_schedules": 220,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 9.72,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "opposite transfers between two accounts",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 220,
+      "dfs_schedules": 220,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 8.52,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two transfers out of one account, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 220,
+      "dfs_schedules": 220,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 8.13,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 26.67,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "cli": "claude",
+    "model_id": "claude-haiku-5-5",
+    "models_shown": [
+      "claude-haiku-5-5"
+    ],
+    "cli_version": "2.1.319 (Claude Code)",
+    "date_utc": "2026-11-07T14:18:52+00:00",
+    "finish_reason": "end_turn",
+    "completion_tokens": 32973,
+    "prompt_tokens": 2,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": 0.01719749,
+    "seconds": 156.44,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "claude.ai (claude -p)"
+  }
+}

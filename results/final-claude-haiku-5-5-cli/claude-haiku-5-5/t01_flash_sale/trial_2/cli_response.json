@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 15771,
+  "stop_reason": "end_turn",
+  "session_id": "da98fb81-1bb4-4b6c-98d2-d28f9870c8c4",
+  "total_cost_usd": 0.00180943,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 384,
+    "cache_read_input_tokens": 5393,
+    "output_tokens": 3357,
+    "output_tokens_details": {
+      "thinking_tokens": 2531
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 384,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 3357,
+        "cache_read_input_tokens": 5393,
+        "cache_creation_input_tokens": 384,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 3357,
+      "cacheReadInputTokens": 5393,
+      "cacheCreationInputTokens": 384,
+      "webSearchRequests": 0,
+      "costUSD": 0.00180943,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 2531,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 384,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The approach is a single conditional `UPDATE` that decrements stock only when enough remains, followed by an `INSERT` into `orders` in the same transaction. In READ COMMITTED, a concurrent `UPDATE` on the same product row waits for the lock, then re-checks `stock >= qty` against the newest row version. So stock never goes negative, buys for the same product serialize without failing, and each unit removed from stock gets an order row.\n\nI haven't run this against PostgreSQL 16.\n\n```python\nimport psycopg.errors\n\nMAX_ATTEMPTS = 10\n\n\ndef purchase(db, product_id: int, qty: int) -> bool:\n    attempts = 0\n    while True:\n        attempts += 1\n        db.begin()  # default isolation: read committed\n        try:\n            # Takes the product row lock. If another purchase holds it, this\n            # waits, then re-checks stock >= qty on the latest committed version.\n            rows = db.execute(\n                \"UPDATE products SET stock = stock - %s \"\n                \"WHERE id = %s AND stock >= %s \"\n                \"RETURNING id\",\n                (qty, product_id, qty),\n            )\n            if not rows:\n                # Not enough stock (or no such product): change nothing.\n                db.rollback()\n                return False\n\n            db.execute(\n                \"INSERT INTO orders (product_id, qty) VALUES (%s, %s)\",\n                (product_id, qty),\n            )\n            db.commit()\n            return True\n        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):\n            db.rollback()\n            if attempts >= MAX_ATTEMPTS:\n                raise\n            # Retry immediately, no sleep.\n```\n\n**Why this satisfies the rules:**\n\n1. **Stock never below zero:** the `stock >= qty` check and the decrement happen in one statement under the row lock, so the check always sees the current value.\n2. **Stock plus orders equals starting stock:** the decrement and the order insert are in one transaction, so either both commit or neither does.\n3. **Fitting purchases succeed:** a waiting purchase re-evaluates against the updated stock after the lock is released, so it succeeds whenever the sequential outcome would. Each request locks only one product row, so there is no lock-ordering cycle. The retry loop is a safety net and is bounded at 10 attempts, about 40 `db` calls, under the 60 limit.\n\nNo `migrate` is defined because the schema needs no changes for this logic.",
+  "ttft_ms": 12845,
+  "type": "result",
+  "duration_ms": 15917,
+  "uuid": "b882626e-dfcf-4b0e-a1d7-54b55a25655a",
+  "ttft_stream_ms": 790,
+  "time_to_request_ms": 141,
+  "first_content_frame_ms": 790,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

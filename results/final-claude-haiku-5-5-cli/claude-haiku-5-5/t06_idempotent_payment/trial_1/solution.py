@@ -1,0 +1,46 @@
+import psycopg
+
+
+def migrate(db) -> None:
+    # The unique index is what makes ON CONFLICT work and enforces rule 1
+    # at the database level, regardless of how many requests run at once.
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uidx "
+        "ON payments (idempotency_key)"
+    )
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    # At most 2 db calls per attempt, so 10 attempts is at most 20 calls (limit is 60).
+    attempts = 10
+    for attempt in range(attempts):
+        try:
+            # If another attempt with this key is in progress, this statement waits
+            # for it. If that attempt commits, we get no row back; if it rolls back,
+            # we insert our own row.
+            rows = db.execute(
+                "INSERT INTO payments (idempotency_key, customer_id, amount) "
+                "VALUES (%s, %s, %s) "
+                "ON CONFLICT (idempotency_key) DO NOTHING "
+                "RETURNING id",
+                (idempotency_key, customer_id, amount),
+            )
+            if rows:
+                return int(rows[0][0])
+
+            # A conflict means a committed row exists. This is a separate statement,
+            # so it takes a new snapshot and sees that committed row.
+            rows = db.execute(
+                "SELECT id FROM payments WHERE idempotency_key = %s",
+                (idempotency_key,),
+            )
+            if rows:
+                return int(rows[0][0])
+        except psycopg.Error:
+            # Transient errors (serialization failure, deadlock) are retried.
+            # Autocommit statements leave no open transaction, so no rollback is needed.
+            if attempt == attempts - 1:
+                raise
+
+    # Not reachable in practice: a conflicting row always exists to be read back.
+    raise RuntimeError("could not resolve payment for idempotency key")

@@ -1,0 +1,123 @@
+import psycopg
+import psycopg.errors
+
+_MAX_ATTEMPTS = 5
+
+
+def _run(db, body):
+    last_error = None
+    for _ in range(_MAX_ATTEMPTS):
+        db.begin()
+        try:
+            result = body(db)
+            db.commit()
+            return result
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected) as e:
+            db.rollback()
+            last_error = e
+        except Exception:
+            db.rollback()
+            raise
+    raise last_error
+
+
+def _lock_department_of_expense(db, expense_id):
+    # Lock the department row first; all writers to a department's expenses
+    # and budget take this same lock, so they are fully serialized.
+    rows = db.execute(
+        "SELECT d.id, d.budget "
+        "FROM expenses e JOIN departments d ON d.id = e.department_id "
+        "WHERE e.id = %s FOR UPDATE OF d",
+        (expense_id,),
+    )
+    return rows[0][0], rows[0][1]
+
+
+def _approved_total(db, dept_id, exclude_expense_id=None):
+    if exclude_expense_id is None:
+        rows = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+            "WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )
+    else:
+        rows = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+            "WHERE department_id = %s AND status = 'approved' AND id <> %s",
+            (dept_id, exclude_expense_id),
+        )
+    return int(rows[0][0])
+
+
+def _approve(db, expense_id):
+    dept_id, budget = _lock_department_of_expense(db, expense_id)
+
+    rows = db.execute(
+        "SELECT status, amount FROM expenses WHERE id = %s",
+        (expense_id,),
+    )
+    status, amount = rows[0][0], rows[0][1]
+    if status != "pending":
+        return False
+
+    total = _approved_total(db, dept_id)
+    if total + amount > budget:
+        return False
+
+    db.execute(
+        "UPDATE expenses SET status = 'approved' WHERE id = %s",
+        (expense_id,),
+    )
+    return True
+
+
+def _edit(db, expense_id, new_amount):
+    dept_id, budget = _lock_department_of_expense(db, expense_id)
+
+    rows = db.execute(
+        "SELECT status FROM expenses WHERE id = %s",
+        (expense_id,),
+    )
+    status = rows[0][0]
+
+    if status == "approved":
+        others = _approved_total(db, dept_id, exclude_expense_id=expense_id)
+        if others + new_amount > budget:
+            return False
+
+    db.execute(
+        "UPDATE expenses SET amount = %s WHERE id = %s",
+        (new_amount, expense_id),
+    )
+    return True
+
+
+def _change_budget(db, dept_id, new_budget):
+    rows = db.execute(
+        "SELECT id FROM departments WHERE id = %s FOR UPDATE",
+        (dept_id,),
+    )
+    if not rows:
+        return False
+
+    total = _approved_total(db, dept_id)
+    if total > new_budget:
+        return False
+
+    db.execute(
+        "UPDATE departments SET budget = %s WHERE id = %s",
+        (new_budget, dept_id),
+    )
+    return True
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    return _run(db, lambda d: _approve(d, expense_id))
+
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    return _run(db, lambda d: _edit(d, expense_id, new_amount))
+
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    return _run(db, lambda d: _change_budget(d, dept_id, new_budget))

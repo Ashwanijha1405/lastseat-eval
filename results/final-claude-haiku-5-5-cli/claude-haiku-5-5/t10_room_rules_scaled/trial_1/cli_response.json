@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 69229,
+  "stop_reason": "end_turn",
+  "session_id": "efa62a01-7631-42ff-bc3c-49151f4c9503",
+  "total_cost_usd": 0.00875749,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4093,
+    "cache_read_input_tokens": 2319,
+    "output_tokens": 15831,
+    "output_tokens_details": {
+      "thinking_tokens": 13642
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 4093,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 15831,
+        "cache_read_input_tokens": 2319,
+        "cache_creation_input_tokens": 4093,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4093
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 15831,
+      "cacheReadInputTokens": 2319,
+      "cacheCreationInputTokens": 4093,
+      "webSearchRequests": 0,
+      "costUSD": 0.00875749,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 13642,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 4093,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The design uses one transaction-scoped advisory lock per (room, UTC day). A booking never crosses midnight, so every overlap and count check for a room only involves bookings on one day. Requests on different rooms or days take different locks and never wait for each other. Reschedule needs both its old and new day locks, taken in sorted order to avoid deadlocks. Reschedule and cancel first lock the booking's own row, so its day can't change while they hold the day locks.\n\nI haven't run this against PostgreSQL 16, so it's untested.\n\n```python\nfrom datetime import date, datetime, timedelta, timezone\n\nfrom psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure\n\n# Each attempt stays well under the 60-call budget per request:\n#   book:       <= 6 calls per attempt, reschedule: <= 8, cancel: <= 5.\n_MAX_ATTEMPTS = 6\n_RETRYABLE = (DeadlockDetected, SerializationFailure, LockNotAvailable)\n_EPOCH = date(1970, 1, 1)\n_ONE_DAY = timedelta(days=1)\n\n\ndef _utc_day(ts: datetime) -> date:\n    return ts.astimezone(timezone.utc).date()\n\n\ndef _day_number(day: date) -> int:\n    return (day - _EPOCH).days\n\n\ndef _day_bounds(day: date):\n    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)\n    return start, start + _ONE_DAY\n\n\ndef _lock_keys(db, keys) -> None:\n    # Always acquire in ascending (room_id, day) order so that\n    # transactions locking several keys cannot deadlock each other.\n    for room_id, day_no in sorted(keys):\n        db.execute(\n            \"SELECT pg_advisory_xact_lock(%s::int, %s::int)\",\n            (room_id, day_no),\n        )\n\n\ndef _fits(db, room_id, day, starts_at, ends_at, exclude_id):\n    \"\"\"Must be called while holding the advisory lock for (room_id, day).\n\n    Returns True if the interval [starts_at, ends_at) overlaps no other\n    booking of the room and at most 2 other bookings exist on that day\n    (so that adding this one gives at most 3).\n    \"\"\"\n    overlap = db.execute(\n        \"SELECT 1 FROM bookings \"\n        \"WHERE room_id = %s::int \"\n        \"  AND id IS DISTINCT FROM %s::int \"\n        \"  AND starts_at < %s \"\n        \"  AND ends_at > %s \"\n        \"LIMIT 1\",\n        (room_id, exclude_id, ends_at, starts_at),\n    )\n    if overlap:\n        return False\n\n    day_start, day_end = _day_bounds(day)\n    count = db.execute(\n        \"SELECT count(*) FROM bookings \"\n        \"WHERE room_id = %s::int \"\n        \"  AND id IS DISTINCT FROM %s::int \"\n        \"  AND starts_at >= %s \"\n        \"  AND starts_at < %s\",\n        (room_id, exclude_id, day_start, day_end),\n    )[0][0]\n    return count <= 2\n\n\ndef book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    day = _utc_day(starts_at)\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin()\n            _lock_keys(db, [(room_id, _day_number(day))])\n            if not _fits(db, room_id, day, starts_at, ends_at, exclude_id=None):\n                db.rollback()\n                return False\n            db.execute(\n                \"INSERT INTO bookings (room_id, starts_at, ends_at) \"\n                \"VALUES (%s, %s, %s)\",\n                (room_id, starts_at, ends_at),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE:\n            db.rollback()\n    return False\n\n\ndef reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:\n    new_day = _utc_day(new_starts_at)\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin()\n            # Lock the booking row first. This fixes its room and old day,\n            # since changing the day requires this same row lock.\n            rows = db.execute(\n                \"SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE\",\n                (booking_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            room_id, old_starts_at = rows[0]\n            old_day = _utc_day(old_starts_at)\n\n            _lock_keys(\n                db,\n                {\n                    (room_id, _day_number(old_day)),\n                    (room_id, _day_number(new_day)),\n                },\n            )\n            if not _fits(db, room_id, new_day, new_starts_at, new_ends_at,\n                         exclude_id=booking_id):\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s\",\n                (new_starts_at, new_ends_at, booking_id),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE:\n            db.rollback()\n    return False\n\n\ndef cancel(db, booking_id: int) -> bool:\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin()\n            rows = db.execute(\n                \"SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE\",\n                (booking_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            room_id, starts_at = rows[0]\n            _lock_keys(db, [(room_id, _day_number(_utc_day(starts_at)))])\n            db.execute(\"DELETE FROM bookings WHERE id = %s\", (booking_id,))\n            db.commit()\n            return True\n        except _RETRYABLE:\n            db.rollback()\n    return False\n```\n\nNotes on the choices:\n- **No `migrate`.** The per-day count can't be expressed as a constraint, and an exclusion constraint could fail on existing data. The advisory locks enforce both rules for every write path.\n- **Retries** are defensive only. With this lock ordering, deadlocks shouldn't occur, but retries are bounded and the call budget holds on every path.\n- **Refusals** roll back the transaction and return `False` without raising.",
+  "ttft_ms": 62787,
+  "type": "result",
+  "duration_ms": 69383,
+  "uuid": "7c388476-9672-4ba3-8666-b1c428e92409",
+  "ttft_stream_ms": 852,
+  "time_to_request_ms": 153,
+  "first_content_frame_ms": 852,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

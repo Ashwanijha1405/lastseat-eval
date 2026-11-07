@@ -1,0 +1,82 @@
+import psycopg
+from psycopg import errors
+
+_MAX_ATTEMPTS = 3
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS expenses_dept_status_idx "
+        "ON expenses (department_id, status)"
+    )
+
+
+def _try_approve(db, expense_id: int) -> bool:
+    db.begin("read committed")
+    try:
+        rows = db.execute(
+            "SELECT department_id FROM expenses WHERE id = %s",
+            (expense_id,),
+        )
+        if not rows:
+            db.rollback()
+            return False
+        dept_id = rows[0][0]
+
+        # Serialise all approvals for this department on its row. Locks are
+        # always taken in the order department -> expense, so no deadlock cycle.
+        db.execute(
+            "SELECT id FROM departments WHERE id = %s FOR UPDATE",
+            (dept_id,),
+        )
+
+        # Re-read the expense under lock: its status may have changed before we
+        # acquired the department lock.
+        rows = db.execute(
+            "SELECT status, amount FROM expenses WHERE id = %s FOR UPDATE",
+            (expense_id,),
+        )
+        if not rows:
+            db.rollback()
+            return False
+        status, amount = rows[0]
+        if status != "pending":
+            db.rollback()
+            return False
+
+        budget = db.execute(
+            "SELECT budget FROM departments WHERE id = %s",
+            (dept_id,),
+        )[0][0]
+
+        # This statement takes a fresh snapshot (read committed), so it sees
+        # every approval committed by earlier holders of the department lock.
+        approved_total = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+            "WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )[0][0]
+
+        if approved_total + amount > budget:
+            db.rollback()
+            return False
+
+        db.execute(
+            "UPDATE expenses SET status = 'approved' WHERE id = %s",
+            (expense_id,),
+        )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return _try_approve(db, expense_id)
+        except (errors.DeadlockDetected, errors.SerializationFailure):
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+    return False

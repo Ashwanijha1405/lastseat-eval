@@ -1,0 +1,43 @@
+The approach is to let a PostgreSQL exclusion constraint enforce "no overlapping bookings per room." The insert either succeeds or raises `ExclusionViolation`, so there is no check-then-insert race. Two concurrent inserts that overlap are serialized by the index, and the loser returns `False`.
+
+```python
+from datetime import datetime
+
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    # btree_gist is needed so GiST can index the integer room_id with "=".
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # Half-open ranges: [starts_at, ends_at) so back-to-back bookings do not overlap.
+    db.execute(
+        "ALTER TABLE bookings ADD CONSTRAINT bookings_no_room_overlap "
+        "EXCLUDE USING gist ("
+        "room_id WITH =, "
+        "tstzrange(starts_at, ends_at, '[)') WITH &&"
+        ")"
+    )
+
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    db.begin()
+    try:
+        # The exclusion constraint checks overlaps atomically. If a conflicting
+        # booking is in progress, this insert waits for it to finish, then either
+        # succeeds (it rolled back) or raises ExclusionViolation (it committed).
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at),
+        )
+        db.commit()
+        return True
+    except errors.ExclusionViolation:
+        db.rollback()
+        return False
+```
+
+Notes on the choices:
+
+- **No retries needed.** The only conflict this path handles is `ExclusionViolation`, and that is a definitive answer. Any overlap means `False`, which is correct. Requests that would all succeed in sequence never overlap, so the constraint never fires for them, which satisfies the "bookings that fit must succeed" rule.
+- **Each call uses 3 `db` calls** (`begin`, `execute`, `commit`), well under the limit of 60.
+- **Assumption:** `migrate` will fail if the existing data already contains overlapping bookings for the same room. I did not delete or rewrite data to get around that, since the task does not say how to resolve such conflicts.

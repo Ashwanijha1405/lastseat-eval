@@ -1,0 +1,60 @@
+The approach is to lock both account rows in ascending id order, check the balance on the locked rows, then update both. Locking in a fixed order prevents deadlocks between opposite-direction transfers. Under read committed, `SELECT ... FOR UPDATE` returns the latest committed version of each row, so the balance check sees all earlier committed transfers. Retries are kept only as a safety net for unexpected deadlocks or serialization failures.
+
+```python
+import psycopg.errors
+
+_RETRYABLE = (
+    psycopg.errors.DeadlockDetected,
+    psycopg.errors.SerializationFailure,
+    psycopg.errors.LockNotAvailable,
+)
+
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    # Always lock the lower id first so that transfers in opposite directions
+    # between the same two accounts cannot deadlock.
+    lo, hi = sorted((from_id, to_id))
+    attempts = 5  # 5 attempts * at most 7 calls each stays under the 60-call limit
+
+    for attempt in range(attempts):
+        try:
+            db.begin()
+
+            # Each FOR UPDATE waits for the row lock and then returns the latest
+            # committed version of the row, so the balances read here are current.
+            balances = {}
+            for acc_id in (lo, hi):
+                rows = db.execute(
+                    "SELECT balance FROM accounts WHERE id = %s FOR UPDATE",
+                    (acc_id,),
+                )
+                balances[acc_id] = rows[0][0]
+
+            if balances[from_id] < amount:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                (amount, from_id),
+            )
+            db.execute(
+                "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                (amount, to_id),
+            )
+            db.commit()
+            return True
+
+        except _RETRYABLE:
+            db.rollback()
+            if attempt == attempts - 1:
+                raise
+            continue
+
+        except Exception:
+            db.rollback()
+            raise
+
+    # Unreachable: the loop either returns or raises.
+    raise RuntimeError("transfer: retry loop exhausted")
+```

@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 25649,
+  "stop_reason": "end_turn",
+  "session_id": "e4a53266-e5e7-4af3-b858-c566ff52ca64",
+  "total_cost_usd": 0.00296037,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 384,
+    "cache_read_input_tokens": 5487,
+    "output_tokens": 5657,
+    "output_tokens_details": {
+      "thinking_tokens": 4772
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 384,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 5657,
+        "cache_read_input_tokens": 5487,
+        "cache_creation_input_tokens": 384,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 5657,
+      "cacheReadInputTokens": 5487,
+      "cacheCreationInputTokens": 384,
+      "webSearchRequests": 0,
+      "costUSD": 0.00296037,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 4772,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 384,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "This uses row locks on the `shards` table instead of SERIALIZABLE retries. Serializable retries could exhaust the 60-call budget under heavy contention. Every drain locks the shards on its node in ascending `id` order, so drains never deadlock. Any change to a shard's `active` flags comes from a drain holding that shard's lock, so the check after the lock sees a settled state.\n\n```python\nfrom psycopg.errors import DeadlockDetected, SerializationFailure\n\n\ndef drain_node(db, node_id: str) -> bool:\n    # Lock every shard that has a replica on this node, in ascending id order.\n    # Any drain that could change one of these shards' active flags must hold\n    # the same shard lock, so the check below sees a settled state. Consistent\n    # lock ordering prevents deadlocks between concurrent drains.\n    for _ in range(10):\n        try:\n            db.begin()\n            db.execute(\n                \"SELECT s.id FROM shards s \"\n                \"WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %s) \"\n                \"ORDER BY s.id FOR UPDATE\",\n                (node_id,),\n            )\n            # Is there a shard where this node is active and no other node is active?\n            rows = db.execute(\n                \"SELECT EXISTS (\"\n                \"  SELECT 1 FROM replicas r \"\n                \"  WHERE r.node_id = %s AND r.active \"\n                \"  AND NOT EXISTS (\"\n                \"    SELECT 1 FROM replicas o \"\n                \"    WHERE o.shard_id = r.shard_id \"\n                \"      AND o.node_id <> %s \"\n                \"      AND o.active\"\n                \"  )\"\n                \")\",\n                (node_id, node_id),\n            )\n            if rows[0][0]:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE replicas SET active = false WHERE node_id = %s\",\n                (node_id,),\n            )\n            db.commit()\n            return True\n        except (SerializationFailure, DeadlockDetected):\n            db.rollback()\n    return False\n```\n\nChoices I made:\n- **Lock scope:** I lock `shards` rows rather than `replicas` rows. Locking only this node's replica rows would miss conflicts with drains on other nodes that touch the same shard.\n- **Isolation:** The default read committed level is enough. The lock is taken before the check, and each statement after the lock sees the committed results of drains that finished earlier.\n- **Retries:** The retry loop is a safety net and should not trigger with the lock ordering. It uses at most about 3 calls per failed attempt, well within the 60-call limit.",
+  "ttft_ms": 23014,
+  "type": "result",
+  "duration_ms": 25764,
+  "uuid": "3e81eba0-141e-408a-9abb-5fc241fdd8fa",
+  "ttft_stream_ms": 993,
+  "time_to_request_ms": 115,
+  "first_content_frame_ms": 993,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

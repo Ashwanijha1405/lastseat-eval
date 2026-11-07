@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 17394,
+  "stop_reason": "end_turn",
+  "session_id": "aa5212ea-6e72-4e85-a649-78de083622aa",
+  "total_cost_usd": 0.00209994,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 385,
+    "cache_read_input_tokens": 5374,
+    "output_tokens": 3938,
+    "output_tokens_details": {
+      "thinking_tokens": 3179
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 385,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 3938,
+        "cache_read_input_tokens": 5374,
+        "cache_creation_input_tokens": 385,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 385
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 3938,
+      "cacheReadInputTokens": 5374,
+      "cacheCreationInputTokens": 385,
+      "webSearchRequests": 0,
+      "costUSD": 0.00209994,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 3179,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 385,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The approach is to lock both account rows in ascending id order, check the balance on the locked rows, then update both. Locking in a fixed order prevents deadlocks between opposite-direction transfers. Under read committed, `SELECT ... FOR UPDATE` returns the latest committed version of each row, so the balance check sees all earlier committed transfers. Retries are kept only as a safety net for unexpected deadlocks or serialization failures.\n\n```python\nimport psycopg.errors\n\n_RETRYABLE = (\n    psycopg.errors.DeadlockDetected,\n    psycopg.errors.SerializationFailure,\n    psycopg.errors.LockNotAvailable,\n)\n\n\ndef transfer(db, from_id: int, to_id: int, amount: int) -> bool:\n    # Always lock the lower id first so that transfers in opposite directions\n    # between the same two accounts cannot deadlock.\n    lo, hi = sorted((from_id, to_id))\n    attempts = 5  # 5 attempts * at most 7 calls each stays under the 60-call limit\n\n    for attempt in range(attempts):\n        try:\n            db.begin()\n\n            # Each FOR UPDATE waits for the row lock and then returns the latest\n            # committed version of the row, so the balances read here are current.\n            balances = {}\n            for acc_id in (lo, hi):\n                rows = db.execute(\n                    \"SELECT balance FROM accounts WHERE id = %s FOR UPDATE\",\n                    (acc_id,),\n                )\n                balances[acc_id] = rows[0][0]\n\n            if balances[from_id] < amount:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE accounts SET balance = balance - %s WHERE id = %s\",\n                (amount, from_id),\n            )\n            db.execute(\n                \"UPDATE accounts SET balance = balance + %s WHERE id = %s\",\n                (amount, to_id),\n            )\n            db.commit()\n            return True\n\n        except _RETRYABLE:\n            db.rollback()\n            if attempt == attempts - 1:\n                raise\n            continue\n\n        except Exception:\n            db.rollback()\n            raise\n\n    # Unreachable: the loop either returns or raises.\n    raise RuntimeError(\"transfer: retry loop exhausted\")\n```",
+  "ttft_ms": 15077,
+  "type": "result",
+  "duration_ms": 17502,
+  "uuid": "92e3318c-a03b-4423-9a61-bc7323bdce94",
+  "ttft_stream_ms": 844,
+  "time_to_request_ms": 125,
+  "first_content_frame_ms": 844,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

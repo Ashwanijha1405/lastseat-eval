@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 68600,
+  "stop_reason": "end_turn",
+  "session_id": "2fb76691-f239-401c-b44c-b258864d5a21",
+  "total_cost_usd": 0.00794763,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 385,
+    "cache_read_input_tokens": 5943,
+    "output_tokens": 15622,
+    "output_tokens_details": {
+      "thinking_tokens": 14167
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 385,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 15622,
+        "cache_read_input_tokens": 5943,
+        "cache_creation_input_tokens": 385,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 385
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 15622,
+      "cacheReadInputTokens": 5943,
+      "cacheCreationInputTokens": 385,
+      "webSearchRequests": 0,
+      "costUSD": 0.00794763,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 14167,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 385,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "This design takes a row lock on the department in every operation that can change its approved total or budget, so operations on one department run one at a time. Each one sees the committed result of the ones before it, and no request is refused just because another was in progress. I haven't run this against PostgreSQL 16.\n\nI read \"if a set of requests would all return `True` \u2026 in any order\" as \"in every order.\" If it instead means \"in some order,\" no lock-based design can meet it without waiting, which the rules forbid.\n\n```python\nfrom psycopg import errors as pg_errors\n\n_MAX_ATTEMPTS = 5\n_RETRYABLE = (\n    pg_errors.SerializationFailure,\n    pg_errors.DeadlockDetected,\n    pg_errors.LockNotAvailable,\n)\n\n\ndef _department_of(db, expense_id):\n    # department_id never changes, so an unlocked read is safe here.\n    rows = db.execute(\n        \"SELECT department_id FROM expenses WHERE id = %s\",\n        (expense_id,),\n    )\n    return rows[0][0] if rows else None\n\n\ndef _approved_total(db, dept_id):\n    rows = db.execute(\n        \"SELECT COALESCE(SUM(amount), 0) FROM expenses \"\n        \"WHERE department_id = %s AND status = 'approved'\",\n        (dept_id,),\n    )\n    return int(rows[0][0])\n\n\ndef _run_locked(db, dept_id, body):\n    \"\"\"Run body(budget) in one transaction that holds the department row lock.\n\n    Every operation that can change a department's approved total or budget\n    takes this lock first. Such operations therefore run one at a time per\n    department, and each one, under read committed, sees the committed effects\n    of all earlier ones. Each transaction locks only one row, so deadlocks\n    between departments cannot occur.\n    \"\"\"\n    for attempt in range(_MAX_ATTEMPTS):\n        db.begin(\"read committed\")\n        try:\n            rows = db.execute(\n                \"SELECT budget FROM departments WHERE id = %s FOR UPDATE\",\n                (dept_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            result = body(rows[0][0])\n            db.commit()\n            return result\n        except _RETRYABLE:\n            db.rollback()\n            if attempt == _MAX_ATTEMPTS - 1:\n                raise\n        except Exception:\n            db.rollback()\n            raise\n    return False\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    dept_id = _department_of(db, expense_id)\n    if dept_id is None:\n        return False\n\n    def body(budget):\n        rows = db.execute(\n            \"SELECT status, amount FROM expenses WHERE id = %s\",\n            (expense_id,),\n        )\n        if not rows:\n            return False\n        status, amount = rows[0]\n        if status != \"pending\":\n            return False\n        if _approved_total(db, dept_id) + amount > budget:\n            return False\n        db.execute(\n            \"UPDATE expenses SET status = 'approved' WHERE id = %s\",\n            (expense_id,),\n        )\n        return True\n\n    return _run_locked(db, dept_id, body)\n\n\ndef edit_expense(db, expense_id: int, new_amount: int) -> bool:\n    dept_id = _department_of(db, expense_id)\n    if dept_id is None:\n        return False\n\n    def body(budget):\n        rows = db.execute(\n            \"SELECT status, amount FROM expenses WHERE id = %s\",\n            (expense_id,),\n        )\n        if not rows:\n            return False\n        status, old_amount = rows[0]\n        if status == \"approved\":\n            # The approved total includes this expense at old_amount.\n            total = _approved_total(db, dept_id)\n            if total - old_amount + new_amount > budget:\n                return False\n        db.execute(\n            \"UPDATE expenses SET amount = %s WHERE id = %s\",\n            (new_amount, expense_id),\n        )\n        return True\n\n    return _run_locked(db, dept_id, body)\n\n\ndef change_budget(db, dept_id: int, new_budget: int) -> bool:\n    def body(_current_budget):\n        if _approved_total(db, dept_id) > new_budget:\n            return False\n        db.execute(\n            \"UPDATE departments SET budget = %s WHERE id = %s\",\n            (new_budget, dept_id),\n        )\n        return True\n\n    return _run_locked(db, dept_id, body)\n```",
+  "ttft_ms": 64447,
+  "type": "result",
+  "duration_ms": 68726,
+  "uuid": "347e409d-a98a-44af-a247-f8e3b268adcf",
+  "ttft_stream_ms": 930,
+  "time_to_request_ms": 124,
+  "first_content_frame_ms": 930,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

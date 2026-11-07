@@ -1,0 +1,23 @@
+scenario: a move within a day and a booking on that day, both fit
+R1: reschedule(db, booking_id=1, new_starts_at=datetime.datetime(2026, 11, 9, 15, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 9, 16, 0, tzinfo=datetime.timezone.utc))
+R2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 13, 0, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]
+step 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 4   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]
+step 5   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R2)
+step 6   R2  SELECT count(*) FROM bookings WHERE room_id = 1 AND starts_at >= '2026-11-09 00:00:00+00:00'::timestamptz AND starts_at < '2026-11-10 00:00:00+00:00'::timestamptz -> [(2,)]
+step 7   R2  SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 13:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 12:00:00+00:00'::timestamptz LIMIT 1 -> []
+step 8   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 12:00:00+00:00'::timestamptz, '2026-11-09 13:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 9   R2  COMMIT -> COMMIT
+         R2  returned True
+         R1  step 5 resumed -> [(1,)]
+step 10  R1  SELECT id FROM bookings WHERE id = 1 FOR UPDATE -> [(1,)]
+step 11  R1  SELECT count(*) FROM bookings WHERE room_id = 1 AND starts_at >= '2026-11-09 00:00:00+00:00'::timestamptz AND starts_at < '2026-11-10 00:00:00+00:00'::timestamptz AND id <> 1 -> [(2,)]
+step 12  R1  COMMIT -> COMMIT
+         R1  returned False
+invariant ok: no two bookings of the same room overlap
+invariant ok: no room has more than 3 bookings on a UTC day
+SUCCESS CHECK FAILED: booking 1 moved to 15:00 and the 12:00 booking exists  (got [(False,)])
+reproduced on re-run: True

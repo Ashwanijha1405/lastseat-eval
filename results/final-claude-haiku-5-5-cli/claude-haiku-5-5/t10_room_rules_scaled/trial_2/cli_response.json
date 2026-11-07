@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 89770,
+  "stop_reason": "end_turn",
+  "session_id": "5ca3cf02-4eae-4233-a1f8-8f350c9427c8",
+  "total_cost_usd": 0.01047479,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 384,
+    "cache_read_input_tokens": 6029,
+    "output_tokens": 20675,
+    "output_tokens_details": {
+      "thinking_tokens": 18018
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 384,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 20675,
+        "cache_read_input_tokens": 6029,
+        "cache_creation_input_tokens": 384,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 20675,
+      "cacheReadInputTokens": 6029,
+      "cacheCreationInputTokens": 384,
+      "webSearchRequests": 0,
+      "costUSD": 0.01047479,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 18018,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 384,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nfrom datetime import date, datetime, timedelta, timezone\n\nfrom psycopg import errors as pg_errors\n\n_MAX_ATTEMPTS = 5\n_MAX_PER_DAY = 3\n_EPOCH = date(1970, 1, 1)\n_RETRYABLE = (pg_errors.DeadlockDetected, pg_errors.SerializationFailure)\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS bookings_room_starts_at_idx \"\n        \"ON bookings (room_id, starts_at)\"\n    )\n\n\ndef book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    return _transact(db, lambda conn: _book(conn, room_id, starts_at, ends_at))\n\n\ndef reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:\n    return _transact(\n        db, lambda conn: _reschedule(conn, booking_id, new_starts_at, new_ends_at)\n    )\n\n\ndef cancel(db, booking_id: int) -> bool:\n    return _transact(db, lambda conn: _cancel(conn, booking_id))\n\n\n# ---------------------------------------------------------------------------\n# Transaction wrapper: bounded retry on deadlock / serialization failure.\n# The body returns (should_commit, result).\n# ---------------------------------------------------------------------------\n\ndef _transact(db, body):\n    last_error = None\n    for _ in range(_MAX_ATTEMPTS):\n        db.begin(\"read committed\")\n        try:\n            should_commit, result = body(db)\n            if should_commit:\n                db.commit()\n            else:\n                db.rollback()\n            return result\n        except _RETRYABLE as exc:\n            last_error = exc\n            db.rollback()\n        except BaseException:\n            db.rollback()\n            raise\n    raise last_error\n\n\n# ---------------------------------------------------------------------------\n# Helpers\n# ---------------------------------------------------------------------------\n\ndef _utc_day(ts: datetime) -> date:\n    return ts.astimezone(timezone.utc).date()\n\n\ndef _day_bounds(day: date):\n    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)\n    return start, start + timedelta(days=1)\n\n\ndef _day_key(day: date) -> int:\n    return (day - _EPOCH).days\n\n\ndef _lock_days(db, room_id: int, days) -> None:\n    # Locks are taken in sorted order so that two requests never hold\n    # one day while waiting for another in the opposite order.\n    # Locks are per (room, UTC day): requests on other rooms or other\n    # days never wait for each other.\n    for day in sorted(set(days)):\n        db.execute(\n            \"SELECT pg_advisory_xact_lock(%s::int4, %s::int4)\",\n            (room_id, _day_key(day)),\n        )\n\n\ndef _room_day_state(db, room_id: int, day: date, exclude_id):\n    \"\"\"Return (number of other bookings on that day, whether any overlaps\n    the window). Callers must hold the (room, day) lock.\"\"\"\n    day_start, day_end = _day_bounds(day)\n    return None  # replaced below\n\n\ndef _room_day_state(db, room_id: int, day: date, starts_at: datetime,\n                    ends_at: datetime, exclude_id):\n    day_start, day_end = _day_bounds(day)\n    rows = db.execute(\n        \"\"\"\n        SELECT count(*),\n               coalesce(bool_or(starts_at < %(ends)s AND ends_at > %(starts)s), false)\n        FROM bookings\n        WHERE room_id = %(room)s\n          AND starts_at >= %(day_start)s\n          AND starts_at <  %(day_end)s\n          AND id IS DISTINCT FROM %(exclude)s::int\n        \"\"\",\n        {\n            \"room\": room_id,\n            \"starts\": starts_at,\n            \"ends\": ends_at,\n            \"day_start\": day_start,\n            \"day_end\": day_end,\n            \"exclude\": exclude_id,\n        },\n    )\n    count, overlaps = rows[0]\n    return int(count), bool(overlaps)\n\n\n# ---------------------------------------------------------------------------\n# Bodies. Each returns (should_commit, result).\n# ---------------------------------------------------------------------------\n\ndef _book(db, room_id, starts_at, ends_at):\n    day = _utc_day(starts_at)\n    _lock_days(db, room_id, [day])\n    count, overlaps = _room_day_state(db, room_id, day, starts_at, ends_at, None)\n    if overlaps or count >= _MAX_PER_DAY:\n        return False, False\n    db.execute(\n        \"INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)\",\n        (room_id, starts_at, ends_at),\n    )\n    return True, True\n\n\ndef _reschedule(db, booking_id, new_starts_at, new_ends_at):\n    # Row lock first: it pins this booking's day, because only\n    # reschedule/cancel of this same row can change or remove it.\n    rows = db.execute(\n        \"SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE\",\n        (booking_id,),\n    )\n    if not rows:\n        return False, False\n    room_id, old_starts_at = rows[0]\n\n    old_day = _utc_day(old_starts_at)\n    new_day = _utc_day(new_starts_at)\n    # Old day is locked too, so concurrent bookings on the old day see\n    # the freed slot only after this change commits.\n    _lock_days(db, room_id, [old_day, new_day])\n\n    count, overlaps = _room_day_state(\n        db, room_id, new_day, new_starts_at, new_ends_at, booking_id\n    )\n    if overlaps or count >= _MAX_PER_DAY:\n        return False, False\n\n    db.execute(\n        \"UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s\",\n        (new_starts_at, new_ends_at, booking_id),\n    )\n    return True, True\n\n\ndef _cancel(db, booking_id):\n    rows = db.execute(\n        \"SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE\",\n        (booking_id,),\n    )\n    if not rows:\n        return False, False\n    room_id, starts_at = rows[0]\n    _lock_days(db, room_id, [_utc_day(starts_at)])\n    db.execute(\"DELETE FROM bookings WHERE id = %s\", (booking_id,))\n    return True, True\n```\n\n**Design notes**\n\n- **Lock granularity:** Every booking lies within one UTC day, so overlap and the 3-per-day limit only involve bookings on the same (room, day). Each write takes a transaction-scoped advisory lock on that pair, so different rooms or different days never wait for each other.\n- **Correctness under read committed:** Once a request holds the lock for a day, every other writer to that day is blocked until it commits, so the count and overlap query sees the latest state for that day.\n- **Reschedule and cancel:** These first take a row lock (`FOR UPDATE`) on the booking. That pins its current day, since only reschedule or cancel of that same row can move or remove it. The old and new days are then locked in sorted order, which avoids lock-order deadlocks. Locking the old day too means a concurrent book on that day cannot be refused against a slot that a reschedule has already freed.\n- **Retries:** Deadlocks and serialization failures are retried a bounded five times, with a rollback before each retry. The design should not produce them, so the retry is a safety net. The worst case stays under the 60-call limit.\n- **Migration:** `migrate` only adds an index on `(room_id, starts_at)` to support the per-day lookups.\n\nI have not run this against a PostgreSQL 16 server.",
+  "ttft_ms": 81388,
+  "type": "result",
+  "duration_ms": 89901,
+  "uuid": "7c5dc7f3-9ce9-40f5-88fb-331e1a5804b1",
+  "ttft_stream_ms": 865,
+  "time_to_request_ms": 130,
+  "first_content_frame_ms": 865,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

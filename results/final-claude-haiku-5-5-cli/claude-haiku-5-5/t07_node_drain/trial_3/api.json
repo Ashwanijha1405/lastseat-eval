@@ -1,0 +1,19 @@
+{
+  "source": "official-cli",
+  "cli": "claude",
+  "model_id": "claude-haiku-5-5",
+  "models_shown": [
+    "claude-haiku-5-5"
+  ],
+  "cli_version": "2.1.319 (Claude Code)",
+  "date_utc": "2026-11-07T14:24:22+00:00",
+  "finish_reason": "end_turn",
+  "completion_tokens": 5657,
+  "prompt_tokens": 2,
+  "cost_usd": 0.0,
+  "cli_reported_cost_usd": 0.00296037,
+  "seconds": 26.91,
+  "num_turns": 1,
+  "attempts": 1,
+  "provider": "claude.ai (claude -p)"
+}

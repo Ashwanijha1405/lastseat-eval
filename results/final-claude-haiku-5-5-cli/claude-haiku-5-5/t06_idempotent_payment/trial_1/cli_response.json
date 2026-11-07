@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 18665,
+  "stop_reason": "end_turn",
+  "session_id": "eeb00cf6-d2a4-4ab0-86dc-ddac76301300",
+  "total_cost_usd": 0.00282649,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3548,
+    "cache_read_input_tokens": 2319,
+    "output_tokens": 4187,
+    "output_tokens_details": {
+      "thinking_tokens": 3319
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3548,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 4187,
+        "cache_read_input_tokens": 2319,
+        "cache_creation_input_tokens": 3548,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3548
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 4187,
+      "cacheReadInputTokens": 2319,
+      "cacheCreationInputTokens": 3548,
+      "webSearchRequests": 0,
+      "costUSD": 0.00282649,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 3319,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 3548,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The approach is a unique index added in `migrate`, plus `INSERT ... ON CONFLICT DO NOTHING`. If the insert returns no row, the existing payment is read in a separate statement, which gets a fresh snapshot under read committed and sees the row the concurrent attempt committed.\n\n```python\nimport psycopg\n\n\ndef migrate(db) -> None:\n    # The unique index is what makes ON CONFLICT work and enforces rule 1\n    # at the database level, regardless of how many requests run at once.\n    db.execute(\n        \"CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uidx \"\n        \"ON payments (idempotency_key)\"\n    )\n\n\ndef create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:\n    # At most 2 db calls per attempt, so 10 attempts is at most 20 calls (limit is 60).\n    attempts = 10\n    for attempt in range(attempts):\n        try:\n            # If another attempt with this key is in progress, this statement waits\n            # for it. If that attempt commits, we get no row back; if it rolls back,\n            # we insert our own row.\n            rows = db.execute(\n                \"INSERT INTO payments (idempotency_key, customer_id, amount) \"\n                \"VALUES (%s, %s, %s) \"\n                \"ON CONFLICT (idempotency_key) DO NOTHING \"\n                \"RETURNING id\",\n                (idempotency_key, customer_id, amount),\n            )\n            if rows:\n                return int(rows[0][0])\n\n            # A conflict means a committed row exists. This is a separate statement,\n            # so it takes a new snapshot and sees that committed row.\n            rows = db.execute(\n                \"SELECT id FROM payments WHERE idempotency_key = %s\",\n                (idempotency_key,),\n            )\n            if rows:\n                return int(rows[0][0])\n        except psycopg.Error:\n            # Transient errors (serialization failure, deadlock) are retried.\n            # Autocommit statements leave no open transaction, so no rollback is needed.\n            if attempt == attempts - 1:\n                raise\n\n    # Not reachable in practice: a conflicting row always exists to be read back.\n    raise RuntimeError(\"could not resolve payment for idempotency key\")\n```\n\nNotes:\n- I have not run this against PostgreSQL 16, so it is untested.\n- `migrate` will fail if the existing data already has duplicate `idempotency_key` values. I did not add code to delete duplicates, because that would silently remove payment records. Those would need manual resolution before the migration runs.",
+  "ttft_ms": 15502,
+  "type": "result",
+  "duration_ms": 18817,
+  "uuid": "e9eb23ef-263d-44a6-906f-f84355b580bb",
+  "ttft_stream_ms": 845,
+  "time_to_request_ms": 150,
+  "first_content_frame_ms": 845,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

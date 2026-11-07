@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 10789,
+  "stop_reason": "end_turn",
+  "session_id": "156feb92-ffe5-4fba-a023-7f908cf4f5f7",
+  "total_cost_usd": 0.0012489299999999999,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 384,
+    "cache_read_input_tokens": 5393,
+    "output_tokens": 2236,
+    "output_tokens_details": {
+      "thinking_tokens": 1571
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 384,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2236,
+        "cache_read_input_tokens": 5393,
+        "cache_creation_input_tokens": 384,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 2236,
+      "cacheReadInputTokens": 5393,
+      "cacheCreationInputTokens": 384,
+      "webSearchRequests": 0,
+      "costUSD": 0.0012489299999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1571,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 384,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The conditional `UPDATE` does the stock check and the decrement in one statement, so concurrent purchases queue on the row lock instead of failing. Each request touches only one product row, so there are no deadlocks and no retries are needed. I haven't run this against PostgreSQL here.\n\n```python\ndef purchase(db, product_id: int, qty: int) -> bool:\n    db.begin()\n    try:\n        # The stock check and decrement happen in one statement. In READ COMMITTED,\n        # a concurrent purchase waits on the row lock, then re-evaluates\n        # `stock >= qty` against the committed value, so stock never goes negative\n        # and fitting purchases are never refused just because they overlapped.\n        rows = db.execute(\n            \"UPDATE products SET stock = stock - %s \"\n            \"WHERE id = %s AND stock >= %s \"\n            \"RETURNING id\",\n            (qty, product_id, qty),\n        )\n        if not rows:\n            # Not enough stock: change nothing and refuse.\n            db.rollback()\n            return False\n\n        # The decrement and the order row commit together, so every unit that\n        # leaves stock is recorded by an order.\n        db.execute(\n            \"INSERT INTO orders (product_id, qty) VALUES (%s, %s)\",\n            (product_id, qty),\n        )\n        db.commit()\n        return True\n    except BaseException:\n        db.rollback()\n        raise\n```\n\nChoices I made:\n- **Isolation level:** I kept the default READ COMMITTED. REPEATABLE READ or SERIALIZABLE would make concurrent updates to the same row raise serialization failures, which would break rule 3 without retries.\n- **No `migrate`:** The query needs no extra index, and I didn't add a `CHECK (stock >= 0)` because it would fail on existing data that already violates it. The `WHERE` guard is what enforces rule 1.\n- **Call count:** Each request makes at most four `db` calls (begin, update, insert, commit), well under the limit of 60.",
+  "ttft_ms": 8496,
+  "type": "result",
+  "duration_ms": 11020,
+  "uuid": "91879f7f-762f-4cf6-ba7a-3ab51d3f0bb2",
+  "ttft_stream_ms": 924,
+  "time_to_request_ms": 230,
+  "first_content_frame_ms": 924,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:08.546Z"
+}

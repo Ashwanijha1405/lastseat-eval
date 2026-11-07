@@ -1,0 +1,49 @@
+The approach is a single conditional `UPDATE` that decrements stock only when enough remains, followed by an `INSERT` into `orders` in the same transaction. In READ COMMITTED, a concurrent `UPDATE` on the same product row waits for the lock, then re-checks `stock >= qty` against the newest row version. So stock never goes negative, buys for the same product serialize without failing, and each unit removed from stock gets an order row.
+
+I haven't run this against PostgreSQL 16.
+
+```python
+import psycopg.errors
+
+MAX_ATTEMPTS = 10
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    attempts = 0
+    while True:
+        attempts += 1
+        db.begin()  # default isolation: read committed
+        try:
+            # Takes the product row lock. If another purchase holds it, this
+            # waits, then re-checks stock >= qty on the latest committed version.
+            rows = db.execute(
+                "UPDATE products SET stock = stock - %s "
+                "WHERE id = %s AND stock >= %s "
+                "RETURNING id",
+                (qty, product_id, qty),
+            )
+            if not rows:
+                # Not enough stock (or no such product): change nothing.
+                db.rollback()
+                return False
+
+            db.execute(
+                "INSERT INTO orders (product_id, qty) VALUES (%s, %s)",
+                (product_id, qty),
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            if attempts >= MAX_ATTEMPTS:
+                raise
+            # Retry immediately, no sleep.
+```
+
+**Why this satisfies the rules:**
+
+1. **Stock never below zero:** the `stock >= qty` check and the decrement happen in one statement under the row lock, so the check always sees the current value.
+2. **Stock plus orders equals starting stock:** the decrement and the order insert are in one transaction, so either both commit or neither does.
+3. **Fitting purchases succeed:** a waiting purchase re-evaluates against the updated stock after the lock is released, so it succeeds whenever the sequential outcome would. Each request locks only one product row, so there is no lock-ordering cycle. The retry loop is a safety net and is bounded at 10 attempts, about 40 `db` calls, under the 60 limit.
+
+No `migrate` is defined because the schema needs no changes for this logic.

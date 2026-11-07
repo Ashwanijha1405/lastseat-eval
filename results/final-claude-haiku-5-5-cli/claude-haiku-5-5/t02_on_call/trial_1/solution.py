@@ -1,0 +1,40 @@
+import psycopg.errors
+
+_MAX_ATTEMPTS = 15  # worst case ~46 db calls, under the 60-call limit
+
+
+def go_off_call(db, doctor_id: int) -> bool:
+    for _ in range(_MAX_ATTEMPTS):
+        db.begin()
+        try:
+            # Lock every doctor row in this doctor's shift, in id order.
+            # Concurrent requests for the same shift queue up on these locks
+            # instead of being refused. Under READ COMMITTED, a request that
+            # waited re-reads the rows after the earlier request committed,
+            # so the count below sees that request's change. Consistent
+            # ordering prevents deadlocks between requests.
+            rows = db.execute(
+                "SELECT id, on_call FROM doctors "
+                "WHERE shift_id = (SELECT shift_id FROM doctors WHERE id = %s) "
+                "ORDER BY id FOR UPDATE",
+                (doctor_id,),
+            )
+            others_on_call = sum(
+                1 for (rid, on_call) in rows if rid != doctor_id and on_call
+            )
+            if others_on_call == 0:
+                # This doctor is the only one on call: change nothing.
+                db.commit()
+                return False
+            db.execute(
+                "UPDATE doctors SET on_call = false WHERE id = %s",
+                (doctor_id,),
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+    # Not reachable in practice: the locking order above prevents deadlocks,
+    # and READ COMMITTED does not produce serialization failures here.
+    return False

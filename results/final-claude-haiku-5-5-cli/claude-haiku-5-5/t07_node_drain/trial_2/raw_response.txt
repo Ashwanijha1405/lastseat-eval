@@ -1,0 +1,76 @@
+The approach is to lock every shard that this node has a replica on, in ascending id order, before checking and deactivating. Any other drain that touches one of those shards must hold the same lock, so the check always sees a settled state. Drains on disjoint shards never wait on each other. Because the locks are always taken in the same order, they cannot deadlock.
+
+```python
+from psycopg import errors
+
+_MAX_ATTEMPTS = 10
+
+
+def drain_node(db, node_id: str) -> bool:
+    for _ in range(_MAX_ATTEMPTS):
+        try:
+            db.begin()
+
+            # Lock every shard this node has a replica of, in ascending id order.
+            # Any drain that changes replicas of one of these shards must hold the
+            # same shard lock, so the check below cannot race with another drain.
+            # The fixed lock order prevents deadlocks between drains.
+            db.execute(
+                """
+                SELECT s.id
+                FROM shards s
+                WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %s)
+                ORDER BY s.id
+                FOR UPDATE OF s
+                """,
+                (node_id,),
+            )
+
+            # Under the shard locks, this statement sees the committed state of
+            # every shard this node touches. Is there any shard where this node is
+            # active and no other node is active?
+            blocked = db.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM replicas mine
+                    WHERE mine.node_id = %s
+                      AND mine.active
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM replicas other
+                          WHERE other.shard_id = mine.shard_id
+                            AND other.node_id <> %s
+                            AND other.active
+                      )
+                )
+                """,
+                (node_id, node_id),
+            )[0][0]
+
+            if blocked:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE replicas SET active = false WHERE node_id = %s AND active",
+                (node_id,),
+            )
+            db.commit()
+            return True
+
+        except (errors.DeadlockDetected, errors.SerializationFailure):
+            db.rollback()
+            continue
+
+    # Retries should not be exhausted with ordered locking; raise rather than
+    # return a answer that might be wrong.
+    raise RuntimeError("drain_node: retry limit exceeded")
+```
+
+Design notes:
+
+- **Why the shard lock is enough:** only drains of a node change that node's `active` flags, and a drain of node X can only affect shard S if X has a replica of S. So any transaction that changes replicas of S must have locked shard S first. Under read committed, each statement takes a fresh snapshot, so once the lock is held the check sees the latest committed state.
+- **Equivalence to a serial order:** two drains that share no shard never interact. Two drains that share a shard serialize on its lock, so the outcome matches running them one after the other. Drains that would succeed serially therefore all return `True`.
+- **Call budget:** a single attempt uses at most five `db` calls (begin, three executes, and a commit or rollback), so ten attempts stay within the 60-call limit.
+- **Not tested:** I have not run this against a PostgreSQL 16 server. The reasoning is from the locking semantics above.

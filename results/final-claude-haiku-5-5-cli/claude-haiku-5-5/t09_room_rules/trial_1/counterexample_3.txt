@@ -1,0 +1,13 @@
+solo check: a booking moves within a full day (it does not count against itself)
+call: reschedule(db, booking_id=1, new_starts_at=datetime.datetime(2026, 11, 9, 15, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 9, 16, 0, tzinfo=datetime.timezone.utc))
+schedule choices: []
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]
+step 3   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]
+step 4   R1  SELECT id FROM bookings WHERE id = 1 FOR UPDATE -> [(1,)]
+step 5   R1  SELECT count(*) FROM bookings WHERE room_id = 1 AND starts_at >= '2026-11-09 00:00:00+00:00'::timestamptz AND starts_at < '2026-11-10 00:00:00+00:00'::timestamptz AND id <> 1 -> [(2,)]
+step 6   R1  COMMIT -> COMMIT
+         R1  returned False
+invariant ok: no two bookings of the same room overlap
+invariant ok: no room has more than 3 bookings on a UTC day
+INVARIANT VIOLATED: expected state: SELECT starts_at = '2026-11-09T15:00:00Z' FROM bookings WHERE id = 1  (got [(False,)])

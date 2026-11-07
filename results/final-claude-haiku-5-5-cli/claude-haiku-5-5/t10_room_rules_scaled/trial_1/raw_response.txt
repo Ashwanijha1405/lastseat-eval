@@ -1,0 +1,157 @@
+The design uses one transaction-scoped advisory lock per (room, UTC day). A booking never crosses midnight, so every overlap and count check for a room only involves bookings on one day. Requests on different rooms or days take different locks and never wait for each other. Reschedule needs both its old and new day locks, taken in sorted order to avoid deadlocks. Reschedule and cancel first lock the booking's own row, so its day can't change while they hold the day locks.
+
+I haven't run this against PostgreSQL 16, so it's untested.
+
+```python
+from datetime import date, datetime, timedelta, timezone
+
+from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure
+
+# Each attempt stays well under the 60-call budget per request:
+#   book:       <= 6 calls per attempt, reschedule: <= 8, cancel: <= 5.
+_MAX_ATTEMPTS = 6
+_RETRYABLE = (DeadlockDetected, SerializationFailure, LockNotAvailable)
+_EPOCH = date(1970, 1, 1)
+_ONE_DAY = timedelta(days=1)
+
+
+def _utc_day(ts: datetime) -> date:
+    return ts.astimezone(timezone.utc).date()
+
+
+def _day_number(day: date) -> int:
+    return (day - _EPOCH).days
+
+
+def _day_bounds(day: date):
+    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    return start, start + _ONE_DAY
+
+
+def _lock_keys(db, keys) -> None:
+    # Always acquire in ascending (room_id, day) order so that
+    # transactions locking several keys cannot deadlock each other.
+    for room_id, day_no in sorted(keys):
+        db.execute(
+            "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+            (room_id, day_no),
+        )
+
+
+def _fits(db, room_id, day, starts_at, ends_at, exclude_id):
+    """Must be called while holding the advisory lock for (room_id, day).
+
+    Returns True if the interval [starts_at, ends_at) overlaps no other
+    booking of the room and at most 2 other bookings exist on that day
+    (so that adding this one gives at most 3).
+    """
+    overlap = db.execute(
+        "SELECT 1 FROM bookings "
+        "WHERE room_id = %s::int "
+        "  AND id IS DISTINCT FROM %s::int "
+        "  AND starts_at < %s "
+        "  AND ends_at > %s "
+        "LIMIT 1",
+        (room_id, exclude_id, ends_at, starts_at),
+    )
+    if overlap:
+        return False
+
+    day_start, day_end = _day_bounds(day)
+    count = db.execute(
+        "SELECT count(*) FROM bookings "
+        "WHERE room_id = %s::int "
+        "  AND id IS DISTINCT FROM %s::int "
+        "  AND starts_at >= %s "
+        "  AND starts_at < %s",
+        (room_id, exclude_id, day_start, day_end),
+    )[0][0]
+    return count <= 2
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    day = _utc_day(starts_at)
+    for _ in range(_MAX_ATTEMPTS):
+        try:
+            db.begin()
+            _lock_keys(db, [(room_id, _day_number(day))])
+            if not _fits(db, room_id, day, starts_at, ends_at, exclude_id=None):
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) "
+                "VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    new_day = _utc_day(new_starts_at)
+    for _ in range(_MAX_ATTEMPTS):
+        try:
+            db.begin()
+            # Lock the booking row first. This fixes its room and old day,
+            # since changing the day requires this same row lock.
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            room_id, old_starts_at = rows[0]
+            old_day = _utc_day(old_starts_at)
+
+            _lock_keys(
+                db,
+                {
+                    (room_id, _day_number(old_day)),
+                    (room_id, _day_number(new_day)),
+                },
+            )
+            if not _fits(db, room_id, new_day, new_starts_at, new_ends_at,
+                         exclude_id=booking_id):
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    for _ in range(_MAX_ATTEMPTS):
+        try:
+            db.begin()
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            room_id, starts_at = rows[0]
+            _lock_keys(db, [(room_id, _day_number(_utc_day(starts_at)))])
+            db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+```
+
+Notes on the choices:
+- **No `migrate`.** The per-day count can't be expressed as a constraint, and an exclusion constraint could fail on existing data. The advisory locks enforce both rules for every write path.
+- **Retries** are defensive only. With this lock ordering, deadlocks shouldn't occur, but retries are bounded and the call budget holds on every path.
+- **Refusals** roll back the transaction and return `False` without raising.

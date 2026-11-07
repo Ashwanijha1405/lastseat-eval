@@ -1,0 +1,32 @@
+The exclusion constraint in `migrate` makes PostgreSQL reject any overlapping booking for the same room, including ones that race each other. `book_room` then just inserts and maps the violation to `False`. Non-overlapping requests never conflict, so they all succeed. Requests that overlap a committed booking get `False`, and a request that overlaps one still in progress waits for it to resolve, so no valid request is refused spuriously.
+
+```python
+from datetime import datetime
+
+import psycopg
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    db.execute(
+        "ALTER TABLE bookings ADD CONSTRAINT bookings_no_room_overlap "
+        "EXCLUDE USING gist ("
+        "room_id WITH =, "
+        "tstzrange(starts_at, ends_at, '[)') WITH &&"
+        ")"
+    )
+
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    try:
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) "
+            "VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at),
+        )
+    except psycopg.errors.ExclusionViolation:
+        db.rollback()
+        return False
+    return True
+```

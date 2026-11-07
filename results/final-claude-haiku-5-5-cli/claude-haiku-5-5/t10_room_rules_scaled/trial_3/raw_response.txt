@@ -1,0 +1,160 @@
+The module below uses a transaction-scoped advisory lock per (room, UTC day). Overlap and per-day count checks only involve bookings on the same UTC day, so locking that pair is enough. Different days of a room never wait for each other. I have not run this against a PostgreSQL server, so it is untested.
+
+```python
+from datetime import date, datetime, timedelta, timezone
+
+from psycopg.errors import DeadlockDetected, SerializationFailure
+
+_EPOCH = date(1970, 1, 1)
+# A failed attempt costs at most 6 db calls, a successful one at most 9.
+# 8 failures + 1 final attempt <= 57 calls, under the 60-call budget.
+_MAX_ATTEMPTS = 9
+_RETRYABLE = (SerializationFailure, DeadlockDetected)
+
+_KEY_SQL = (
+    "SELECT room_id, (starts_at AT TIME ZONE 'UTC')::date "
+    "FROM bookings WHERE id = %s"
+)
+
+_STATS_SQL = """
+SELECT count(*),
+       count(*) FILTER (WHERE starts_at < %(ends)s AND ends_at > %(starts)s)
+FROM bookings
+WHERE room_id = %(room)s
+  AND starts_at >= %(day_start)s
+  AND starts_at < %(day_end)s
+  AND id IS DISTINCT FROM %(exclude)s::int
+"""
+
+
+def _utc_day(dt: datetime) -> date:
+    return dt.astimezone(timezone.utc).date()
+
+
+def _lock_days(db, room_id: int, days) -> None:
+    # Locks are taken in ascending (room, day) order everywhere, so they cannot deadlock.
+    for day_no in sorted({(d - _EPOCH).days for d in days}):
+        db.execute("SELECT pg_advisory_xact_lock(%s::int, %s::int)", (room_id, day_no))
+
+
+def _day_stats(db, room_id, day, starts_at, ends_at, exclude_id):
+    """Return (bookings on that UTC day excluding exclude_id, how many of them overlap the interval)."""
+    day_start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    rows = db.execute(
+        _STATS_SQL,
+        {
+            "room": room_id,
+            "day_start": day_start,
+            "day_end": day_start + timedelta(days=1),
+            "starts": starts_at,
+            "ends": ends_at,
+            "exclude": exclude_id,
+        },
+    )
+    total, overlapping = rows[0]
+    return total, overlapping
+
+
+def _transact(db, work):
+    """
+    Run work() inside a transaction, retrying a bounded number of times.
+    work() returns True (commit), False (rollback, refuse), or None (rollback and retry).
+    """
+    for _ in range(_MAX_ATTEMPTS):
+        db.begin()
+        try:
+            outcome = work()
+            if outcome is None:
+                db.rollback()
+                continue
+            if outcome:
+                db.commit()
+            else:
+                db.rollback()
+            return outcome
+        except _RETRYABLE:
+            db.rollback()
+        except BaseException:
+            db.rollback()
+            raise
+    return False
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    day = _utc_day(starts_at)
+
+    def work():
+        _lock_days(db, room_id, [day])
+        total, overlapping = _day_stats(db, room_id, day, starts_at, ends_at, None)
+        if overlapping or total >= 3:
+            return False
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at),
+        )
+        return True
+
+    return _transact(db, work)
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    new_day = _utc_day(new_starts_at)
+
+    def work():
+        found = db.execute(_KEY_SQL, (booking_id,))
+        if not found:
+            return False
+        room_id, old_day = found[0]
+        # Both days are locked, in sorted order. While the old-day lock is held,
+        # the booking cannot leave that day, and it cannot be deleted.
+        _lock_days(db, room_id, [old_day, new_day])
+        current = db.execute(_KEY_SQL, (booking_id,))
+        if not current:
+            return False  # cancelled concurrently
+        if current[0] != (room_id, old_day):
+            return None  # moved to another day between the read and the lock; retry
+        total, overlapping = _day_stats(
+            db, room_id, new_day, new_starts_at, new_ends_at, booking_id
+        )
+        if overlapping or total >= 3:
+            return False
+        db.execute(
+            "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+            (new_starts_at, new_ends_at, booking_id),
+        )
+        return True
+
+    return _transact(db, work)
+
+
+def cancel(db, booking_id: int) -> bool:
+    def work():
+        found = db.execute(_KEY_SQL, (booking_id,))
+        if not found:
+            return False
+        room_id, day = found[0]
+        _lock_days(db, room_id, [day])
+        current = db.execute(_KEY_SQL, (booking_id,))
+        if not current:
+            return False  # already cancelled by a concurrent request
+        if current[0] != (room_id, day):
+            return None  # moved to another day between the read and the lock; retry
+        db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+        return True
+
+    return _transact(db, work)
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_starts_idx "
+        "ON bookings (room_id, starts_at)"
+    )
+```
+
+Notes on the design:
+
+- **Cancel must lock too.** If `book` ignored a concurrent `cancel`, it could return `False` where the serial order "cancel, then book" would have returned `True`, which breaks rule 3.
+- **Reschedule locks both days** (old and new) in ascending order, so it can't deadlock with other requests.
+- **Cancel and reschedule re-read the booking after locking.** If it moved days in the gap, they release and retry. This is the only retry path.
+- **Known limit:** if the same booking keeps changing days faster than the retry bound (9 attempts), `reschedule` or `cancel` returns `False` rather than raising. That is the one case where rule 3 could be violated under extreme contention.

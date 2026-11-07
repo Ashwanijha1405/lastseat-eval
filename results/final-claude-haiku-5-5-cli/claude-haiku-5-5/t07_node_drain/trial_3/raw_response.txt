@@ -1,0 +1,53 @@
+This uses row locks on the `shards` table instead of SERIALIZABLE retries. Serializable retries could exhaust the 60-call budget under heavy contention. Every drain locks the shards on its node in ascending `id` order, so drains never deadlock. Any change to a shard's `active` flags comes from a drain holding that shard's lock, so the check after the lock sees a settled state.
+
+```python
+from psycopg.errors import DeadlockDetected, SerializationFailure
+
+
+def drain_node(db, node_id: str) -> bool:
+    # Lock every shard that has a replica on this node, in ascending id order.
+    # Any drain that could change one of these shards' active flags must hold
+    # the same shard lock, so the check below sees a settled state. Consistent
+    # lock ordering prevents deadlocks between concurrent drains.
+    for _ in range(10):
+        try:
+            db.begin()
+            db.execute(
+                "SELECT s.id FROM shards s "
+                "WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %s) "
+                "ORDER BY s.id FOR UPDATE",
+                (node_id,),
+            )
+            # Is there a shard where this node is active and no other node is active?
+            rows = db.execute(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM replicas r "
+                "  WHERE r.node_id = %s AND r.active "
+                "  AND NOT EXISTS ("
+                "    SELECT 1 FROM replicas o "
+                "    WHERE o.shard_id = r.shard_id "
+                "      AND o.node_id <> %s "
+                "      AND o.active"
+                "  )"
+                ")",
+                (node_id, node_id),
+            )
+            if rows[0][0]:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE replicas SET active = false WHERE node_id = %s",
+                (node_id,),
+            )
+            db.commit()
+            return True
+        except (SerializationFailure, DeadlockDetected):
+            db.rollback()
+    return False
+```
+
+Choices I made:
+- **Lock scope:** I lock `shards` rows rather than `replicas` rows. Locking only this node's replica rows would miss conflicts with drains on other nodes that touch the same shard.
+- **Isolation:** The default read committed level is enough. The lock is taken before the check, and each statement after the lock sees the committed results of drains that finished earlier.
+- **Retries:** The retry loop is a safety net and should not trigger with the lock ordering. It uses at most about 3 calls per failed attempt, well within the 60-call limit.

@@ -1,0 +1,197 @@
+The approach is a per-room row lock. Every call takes `SELECT ... FOR UPDATE` on its room's row before checking or changing that room's bookings. Each call therefore sees the committed result of every earlier call on the same room, so the results match some serial order. Each request locks only one room, so deadlocks between requests shouldn't occur. Retries stay in the code as a backstop, bounded at 4 attempts.
+
+```python
+from datetime import datetime, time, timedelta, timezone
+
+from psycopg import errors
+
+MAX_ATTEMPTS = 4
+MAX_PER_DAY = 3
+
+_RETRYABLE = (errors.SerializationFailure, errors.DeadlockDetected)
+
+_LOCK_ROOM_SQL = "SELECT id FROM rooms WHERE id = %(room_id)s FOR UPDATE"
+
+_BOOKING_ROOM_SQL = "SELECT room_id FROM bookings WHERE id = %(id)s"
+
+_BOOKING_LOCK_SQL = "SELECT id FROM bookings WHERE id = %(id)s FOR UPDATE"
+
+_DAY_COUNT_SQL = """
+SELECT count(*) FROM bookings
+WHERE room_id = %(room_id)s
+  AND starts_at >= %(day_start)s
+  AND starts_at < %(day_end)s
+"""
+
+_DAY_COUNT_EXCL_SQL = """
+SELECT count(*) FROM bookings
+WHERE room_id = %(room_id)s
+  AND starts_at >= %(day_start)s
+  AND starts_at < %(day_end)s
+  AND id <> %(exclude_id)s
+"""
+
+_OVERLAP_SQL = """
+SELECT 1 FROM bookings
+WHERE room_id = %(room_id)s
+  AND starts_at < %(ends_at)s
+  AND ends_at > %(starts_at)s
+LIMIT 1
+"""
+
+_OVERLAP_EXCL_SQL = """
+SELECT 1 FROM bookings
+WHERE room_id = %(room_id)s
+  AND starts_at < %(ends_at)s
+  AND ends_at > %(starts_at)s
+  AND id <> %(exclude_id)s
+LIMIT 1
+"""
+
+_INSERT_SQL = """
+INSERT INTO bookings (room_id, starts_at, ends_at)
+VALUES (%(room_id)s, %(starts_at)s, %(ends_at)s)
+"""
+
+_UPDATE_SQL = """
+UPDATE bookings
+SET starts_at = %(starts_at)s, ends_at = %(ends_at)s
+WHERE id = %(id)s
+"""
+
+_DELETE_SQL = "DELETE FROM bookings WHERE id = %(id)s RETURNING id"
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_starts_idx "
+        "ON bookings (room_id, starts_at)"
+    )
+
+
+def _utc_day_bounds(ts: datetime):
+    day = ts.astimezone(timezone.utc).date()
+    start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+    return start, start + timedelta(days=1)
+
+
+def _lock_room(db, room_id):
+    db.execute(_LOCK_ROOM_SQL, {"room_id": room_id})
+
+
+def _run(db, work, *args):
+    last_exc = None
+    for _ in range(MAX_ATTEMPTS):
+        db.begin()
+        try:
+            result = work(db, *args)
+            db.commit()
+            return result
+        except _RETRYABLE as exc:
+            db.rollback()
+            last_exc = exc
+        except BaseException:
+            db.rollback()
+            raise
+    raise last_exc
+
+
+def _book_work(db, room_id, starts_at, ends_at):
+    _lock_room(db, room_id)
+
+    day_start, day_end = _utc_day_bounds(starts_at)
+    count = db.execute(
+        _DAY_COUNT_SQL,
+        {"room_id": room_id, "day_start": day_start, "day_end": day_end},
+    )[0][0]
+    if count >= MAX_PER_DAY:
+        return False
+
+    overlap = db.execute(
+        _OVERLAP_SQL,
+        {"room_id": room_id, "starts_at": starts_at, "ends_at": ends_at},
+    )
+    if overlap:
+        return False
+
+    db.execute(
+        _INSERT_SQL,
+        {"room_id": room_id, "starts_at": starts_at, "ends_at": ends_at},
+    )
+    return True
+
+
+def _reschedule_work(db, booking_id, new_starts_at, new_ends_at):
+    rows = db.execute(_BOOKING_ROOM_SQL, {"id": booking_id})
+    if not rows:
+        return False
+    room_id = rows[0][0]
+
+    _lock_room(db, room_id)
+
+    # Re-check existence under the room lock (it may have been cancelled).
+    if not db.execute(_BOOKING_LOCK_SQL, {"id": booking_id}):
+        return False
+
+    day_start, day_end = _utc_day_bounds(new_starts_at)
+    count = db.execute(
+        _DAY_COUNT_EXCL_SQL,
+        {
+            "room_id": room_id,
+            "day_start": day_start,
+            "day_end": day_end,
+            "exclude_id": booking_id,
+        },
+    )[0][0]
+    if count >= MAX_PER_DAY - 1:
+        return False
+
+    overlap = db.execute(
+        _OVERLAP_EXCL_SQL,
+        {
+            "room_id": room_id,
+            "starts_at": new_starts_at,
+            "ends_at": new_ends_at,
+            "exclude_id": booking_id,
+        },
+    )
+    if overlap:
+        return False
+
+    db.execute(
+        _UPDATE_SQL,
+        {"id": booking_id, "starts_at": new_starts_at, "ends_at": new_ends_at},
+    )
+    return True
+
+
+def _cancel_work(db, booking_id):
+    rows = db.execute(_BOOKING_ROOM_SQL, {"id": booking_id})
+    if not rows:
+        return False
+    room_id = rows[0][0]
+
+    _lock_room(db, room_id)
+
+    deleted = db.execute(_DELETE_SQL, {"id": booking_id})
+    return len(deleted) > 0
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    return _run(db, _book_work, room_id, starts_at, ends_at)
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    return _run(db, _reschedule_work, booking_id, new_starts_at, new_ends_at)
+
+
+def cancel(db, booking_id: int) -> bool:
+    return _run(db, _cancel_work, booking_id)
+```
+
+**Choices I made:**
+- **Per-room locking:** all three functions lock the room row first. Without this, `cancel` could commit after a concurrent `book` had already refused on the old booking, which would break the "requests that fit must succeed" rule.
+- **Retries:** serialization failures and deadlocks are retried up to 4 times. Each attempt uses about 9 `db` calls at most, well under the 60-call limit.
+- **Migration:** adds an index on `(room_id, starts_at)` to speed up the overlap and per-day count queries. It doesn't change any rule.
+
+I haven't run this against a PostgreSQL 16 server, so it is verified by reasoning only.
