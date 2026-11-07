@@ -208,6 +208,17 @@ applies to every function of the task.
   still report what the scheduler observed; only the score changes.
 - **Solo correctness (0.25):** all solo checks pass.
 - **Liveness (0.25):** in scenarios with `must_all_succeed: true`, every request returns `True` in every schedule (no exception escapes, no `STEP_LIMIT`).
+  In scenarios with `must_not_block: true` (added 2026-11-07, first used by t10), no request may
+  ever wait for a lock held by another request, in any explored schedule; otherwise the scenario
+  is not live and `verdict.json` records `"liveness_reason": "blocked_independent_requests"`
+  (category concurrency). Detection is the scheduler's own `pg_blocking_pids` record at each
+  quiescent point (never timing): the lock holder is paused at a step boundary while the other
+  waits, so every wait between two requests is observed, and the re-run of each failing schedule
+  must show the same wait. *Why:* a whole-room or whole-department lock is safe and live but
+  serializes requests that can never conflict; t10 states that independent requests must not wait.
+  Waits on sessions that are not requests are ignored. A wrong variant that fails only this way
+  says `EXPECT: blocking` (validate then also checks that it is safe, has no other unlive
+  schedule, and blocked only in `must_not_block` scenarios).
 - **Task PASS** = all three fully satisfied. Partial score reported separately.
 - Code that fails to load (syntax error, missing function, forbidden import) = score 0 with reason recorded.
 

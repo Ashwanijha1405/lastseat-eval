@@ -1,5 +1,7 @@
 """Grader scoring rules that are not exercised by the task validation suite."""
 
+import json
+
 from lastseat.grade import VACUOUS_SAFETY, grade
 from lastseat.task import TASKS_DIR, load_task
 
@@ -174,3 +176,44 @@ def test_verdict_json_carries_the_category():
     import json
     v = grade(T01, ALWAYS_RAISES)
     assert json.loads(v.to_json())["failure_category"] == "spec"
+
+
+# --- must_not_block: independent requests must never wait for each other ------
+
+def _t10_independent_only():
+    """t10 with only its must_not_block scenarios (and one solo check), to keep the test fast."""
+    import dataclasses
+    t10 = load_task(TASKS_DIR / "t10_room_rules_scaled")
+    return dataclasses.replace(t10, scenarios=tuple(s for s in t10.scenarios if s.must_not_block),
+                               solo_checks=t10.solo_checks[:1])
+
+
+def test_a_whole_room_lock_fails_must_not_block():
+    from lastseat.grade import BLOCKED, failure_category
+    task = _t10_independent_only()
+    v = grade(task, (task.directory / "wrong" / "w5_whole_room_lock.py").read_text(encoding="utf-8"))
+    by_name = {s.name: s for s in v.scenarios}
+    assert all(s.safe for s in v.scenarios) and v.scores["safety"] == 0.5
+    assert v.scores["liveness"] == 0.0 and v.liveness_reason == BLOCKED
+    assert failure_category(json.loads(v.to_json())) == "concurrency"
+    different_rooms = by_name["bookings of different rooms on the same day never wait"]
+    assert different_rooms.live and different_rooms.blocked_schedules == 0   # different rows: no wait
+    same_room = [s for s in v.scenarios if s is not different_rooms]
+    assert all(not s.live and s.blocked_schedules > 0 and s.unlive_schedules == 0 for s in same_room)
+    assert all(s.all_reproduced for s in same_room)
+    ce = same_room[0].counterexamples[0]
+    assert "blocked (waiting for R" in ce and f"BLOCKED ({BLOCKED})" in ce
+
+
+def test_the_per_day_advisory_lock_passes_must_not_block():
+    task = _t10_independent_only()
+    v = grade(task, task.reference_path.read_text(encoding="utf-8"))
+    assert v.passed and v.liveness_reason is None
+    assert all(s.must_not_block and s.blocked_schedules == 0 for s in v.scenarios)
+
+
+def test_waiting_is_fine_where_must_not_block_is_not_set():
+    """The same whole-room lock on t09 (no must_not_block): requests wait, and that is allowed."""
+    t09 = load_task(TASKS_DIR / "t09_room_rules")
+    v = grade(t09, (TASKS_DIR / "t10_room_rules_scaled" / "wrong" / "w5_whole_room_lock.py").read_text(encoding="utf-8"))
+    assert v.passed and all(s.blocked_schedules == 0 for s in v.scenarios)

@@ -1,0 +1,22 @@
+scenario: bookings of the same room on different days never wait
+R1: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))
+R2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 10, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 10, 11, 0, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 0, 0, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]
+step 3   R1  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND '2026-11-09 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]
+step 4   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 6   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R1)
+step 7   R1  COMMIT -> COMMIT
+         R1  returned True
+         R2  step 6 resumed -> [(1,)]
+step 8   R2  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-10 11:00:00+00:00'::timestamptz AND '2026-11-10 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]
+step 9   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-10 10:00:00+00:00'::timestamptz, '2026-11-10 11:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 10  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: no two bookings of the same room overlap
+invariant ok: no room has more than 3 bookings on a UTC day
+success check ok: both bookings exist
+BLOCKED (blocked_independent_requests): these requests must never wait for each other: R2 waited for R1 at step 6
+reproduced on re-run: True

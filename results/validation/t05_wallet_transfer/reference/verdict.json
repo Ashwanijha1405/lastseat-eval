@@ -46,7 +46,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.21
+      "seconds": 0.97,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "opposite transfers between two accounts",
@@ -62,7 +65,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.18
+      "seconds": 1.01,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -78,7 +84,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.1
+      "seconds": 1.11,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -88,8 +97,9 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 3.79,
+  "seconds": 3.32,
   "failure_category": null
 }

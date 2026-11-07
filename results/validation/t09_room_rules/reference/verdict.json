@@ -106,7 +106,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.16
+      "seconds": 1.06,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two overlapping bookings of a free slot",
@@ -122,7 +125,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.05
+      "seconds": 1.04,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "a move from another day and a booking, for the last place of a day",
@@ -138,7 +144,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.09
+      "seconds": 2.18,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two moves from different days, for the last place of a day",
@@ -154,7 +163,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.29
+      "seconds": 4.4,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "a move from another day and a booking, onto the same slot",
@@ -170,7 +182,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.22
+      "seconds": 2.12,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two moves between two days in opposite directions, both fit",
@@ -186,7 +201,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 25.65
+      "seconds": 25.63,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "a cancellation and a booking on the same day, both fit",
@@ -202,7 +220,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.56
+      "seconds": 0.57,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "a move within a day and a booking on that day, both fit",
@@ -218,7 +239,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.2
+      "seconds": 2.19,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -228,8 +252,9 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 40.17,
+  "seconds": 40.07,
   "failure_category": null
 }

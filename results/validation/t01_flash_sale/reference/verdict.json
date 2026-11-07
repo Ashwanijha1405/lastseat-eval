@@ -40,7 +40,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.8
+      "seconds": 0.72,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two buyers, both fit",
@@ -56,7 +59,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.75
+      "seconds": 0.71,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -66,8 +72,9 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 1.76,
+  "seconds": 1.7,
   "failure_category": null
 }

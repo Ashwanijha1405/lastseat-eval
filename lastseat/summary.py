@@ -54,7 +54,7 @@ def _cell(d: Path, v: dict | None) -> str:
         mark = "PASS"
     else:
         cat = failure_category(v)
-        detail = v.get("load_error") or v.get("safety_reason")
+        detail = v.get("load_error") or v.get("safety_reason") or v.get("liveness_reason")
         mark = f"FAIL [{cat}]" + (f" ({detail})" if detail else "")
     return (f"{mark} {s.get('total', 0):.2f} (sa {s.get('safety', 0):.2f} / so {s.get('solo', 0):.2f}"
             f" / li {s.get('liveness', 0):.2f})")
@@ -111,7 +111,7 @@ def summarize(run: Path) -> str:
                 api = v.get("api") or {}
                 out.append(f"### {m} / {t} / {d.name}: {failure_category(v)}")
                 out.append(f"- status `{v.get('status')}`, load_error `{v.get('load_error')}`, "
-                           f"safety_reason `{v.get('safety_reason')}`, finish_reason `{api.get('finish_reason')}`, "
+                           f"safety_reason `{v.get('safety_reason')}`, liveness_reason `{v.get('liveness_reason')}`, finish_reason `{api.get('finish_reason')}`, "
                            f"completion_tokens {api.get('completion_tokens')}")
                 for key in ("load_detail", "harness_detail"):
                     if v.get(key):
@@ -123,7 +123,9 @@ def summarize(run: Path) -> str:
                     if not (sc.get("safe") and sc.get("live")) or sc.get("status") not in (None, "ok"):
                         out.append(f"- scenario `{sc['name']}`: status {sc.get('status')}, safe={sc.get('safe')} "
                                    f"({sc.get('unsafe_schedules')} unsafe), live={sc.get('live')} "
-                                   f"({sc.get('unlive_schedules')} unlive) of {sc.get('schedules')} schedules, "
+                                   f"({sc.get('unlive_schedules')} unlive"
+                                   + (f", {sc.get('blocked_schedules')} blocked" if sc.get("must_not_block") else "")
+                                   + f") of {sc.get('schedules')} schedules, "
                                    f"exhaustive={sc.get('exhaustive')}, reproduced={sc.get('all_reproduced')}")
                 for f in sorted(d.glob("counterexample_*.txt")):
                     out.append(f"- counterexample: `{f.relative_to(run.parent.parent).as_posix()}`")

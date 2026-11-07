@@ -76,7 +76,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.06
+      "seconds": 1.04,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -94,7 +97,10 @@
       "counterexamples": [
         "scenario: approval and a budget cut, not both fit\nR1: approve_expense(db, expense_id=2)\nR2: change_budget(db, dept_id=1, new_budget=60)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 2) FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 2 -> [('pending', 40, 40)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT COALESCE(sum(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(40,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE departments SET budget = 60 WHERE id = 1 -> UPDATE 1\nstep 9   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.03
+      "seconds": 2.92,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -112,7 +118,10 @@
       "counterexamples": [
         "scenario: raise of an approved expense and a budget cut, not both fit\nR1: edit_expense(db, expense_id=1, new_amount=70)\nR2: change_budget(db, dept_id=1, new_budget=50)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('approved', 40, 40)]\nstep 4   R1  UPDATE expenses SET amount = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT COALESCE(sum(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(40,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE departments SET budget = 50 WHERE id = 1 -> UPDATE 1\nstep 9   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.17
+      "seconds": 2.96,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -128,7 +137,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.05
+      "seconds": 1.04,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "approval and a raise that both fit",
@@ -144,7 +156,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.05
+      "seconds": 1.19,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -160,7 +175,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.7
+      "seconds": 1.79,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -176,7 +194,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 3.15
+      "seconds": 3.21,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -186,8 +207,9 @@
     "total": 0.5
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 14.77,
+  "seconds": 14.74,
   "failure_category": "concurrency"
 }

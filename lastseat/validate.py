@@ -42,9 +42,31 @@ def expected_failures(path: Path) -> set[str]:
             raise ValueError(f"{path}: EXPECT load_error must be one of {LOAD_ERRORS}, got {load.group(1)!r}")
         return {f"load_error:{load.group(1)}"}
     parts = {p.strip() for p in m.group(1).split(",")}
+    if parts == {BLOCKING}:
+        return parts
     if not parts or not parts <= set(SCORE_WEIGHTS):
-        raise ValueError(f"{path}: EXPECT must list some of {sorted(SCORE_WEIGHTS)}, got {m.group(1)!r}")
+        raise ValueError(f"{path}: EXPECT must list some of {sorted(SCORE_WEIGHTS)}, or be exactly "
+                         f"'{BLOCKING}', got {m.group(1)!r}")
     return parts
+
+
+# `EXPECT: blocking`: fails liveness, and only because independent requests
+# waited for each other in must_not_block scenarios; everything else passes.
+BLOCKING = "blocking"
+
+
+def blocking_problems(verdict: dict) -> list[str]:
+    problems = []
+    for s in verdict.get("scenarios", []):
+        if not s.get("safe"):
+            problems.append(f"scenario {s['name']!r} is unsafe")
+        if s.get("unlive_schedules"):
+            problems.append(f"scenario {s['name']!r} has {s['unlive_schedules']} unlive schedule(s) (not blocking)")
+        if s.get("blocked_schedules") and not s.get("must_not_block"):
+            problems.append(f"scenario {s['name']!r} counted blocking but is not must_not_block")
+    if not any(s.get("blocked_schedules") for s in verdict.get("scenarios", [])):
+        problems.append("no must_not_block scenario saw a request wait")
+    return problems
 
 
 def failed_components(verdict: dict) -> set[str]:
@@ -84,6 +106,9 @@ def check(task: Task, path: Path, verdict: dict, expected: set[str] | None) -> l
     if not verdict.get("reproducible"):
         problems.append("a failing schedule did not reproduce on re-run")
     failed = failed_components(verdict)
+    if expected == {BLOCKING}:
+        problems += blocking_problems(verdict)
+        expected = {"liveness"}
     if expected is None and failed:
         problems.append(f"reference must pass, failed {sorted(failed)}")
     if expected is not None and failed != expected:
@@ -98,7 +123,8 @@ def _row(task: Task, path: Path, verdict: dict, expected: set[str] | None, probl
     sched = ", ".join(f"{s['schedules']}{'' if s['exhaustive'] else '*'}" for s in scenarios) or "-"
     ces = sorted((RESULTS / "validation" / task.id / path.stem).glob("counterexample_*.txt"))
     links = " ".join(f"[{c.stem.split('_')[-1]}]({c.relative_to(RESULTS).as_posix()})" for c in ces) or "-"
-    want = "PASS" if expected is None else "fail " + "+".join(sorted(expected))
+    want = "PASS" if expected is None else "fail " + "+".join(sorted(expected)).replace(
+        BLOCKING, "liveness (blocking only)")
     ok = "✅ ok" if not problems else "❌ " + "; ".join(problems)
     return f"| {task.id} | `{path.relative_to(task.directory).as_posix()}` | {want} | {marks} | {sched} | {links} | {ok} |"
 

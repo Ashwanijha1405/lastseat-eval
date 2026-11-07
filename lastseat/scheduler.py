@@ -110,6 +110,13 @@ class ScheduleResult:
         return self.status == "ok" and all(i.holds for i in self.invariants if i.kind == "safety")
 
     @property
+    def request_waits(self) -> list[tuple[int, int, tuple[int, ...]]]:
+        """(step, waiting request, requests it waited for), from pg_blocking_pids
+        at each quiescent point. Waits on sessions that are not requests are left out."""
+        return [(step, req, by) for step, waits in sorted(self.blocked.items())
+                for req, by in sorted(waits.items()) if by]
+
+    @property
     def success_holds(self) -> bool:
         """All success checks hold."""
         return self.status == "ok" and all(i.holds for i in self.invariants if i.kind == "success")

@@ -1,0 +1,23 @@
+scenario: a move into one day and a booking on another day of the same room never wait
+R1: reschedule(db, booking_id=1, new_starts_at=datetime.datetime(2026, 11, 10, 14, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 10, 15, 0, tzinfo=datetime.timezone.utc))
+R2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 0, 0, 0, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]
+step 3   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]
+step 4   R1  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 1 AND starts_at < '2026-11-10 15:00:00+00:00'::timestamptz AND '2026-11-10 14:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 1 AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 14:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]
+step 5   R1  UPDATE bookings SET starts_at = '2026-11-10 14:00:00+00:00'::timestamptz, ends_at = '2026-11-10 15:00:00+00:00'::timestamptz WHERE id = 1 RETURNING id -> UPDATE 1 [(1,)]
+step 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 7   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R1)
+step 8   R1  COMMIT -> COMMIT
+         R1  returned True
+         R2  step 7 resumed -> [(1,)]
+step 9   R2  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND '2026-11-09 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]
+step 10  R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 11  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: no two bookings of the same room overlap
+invariant ok: no room has more than 3 bookings on a UTC day
+success check ok: booking 1 is on Nov 10 at 14:00 and the Nov 9 booking exists
+BLOCKED (blocked_independent_requests): these requests must never wait for each other: R2 waited for R1 at step 7
+reproduced on re-run: True

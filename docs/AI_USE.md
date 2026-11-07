@@ -649,3 +649,44 @@ instead, require an explicit `--new`.
 - `--safe-mode` also hides your global CLAUDE.md/skills from the model: intended.
 - The usage-limit regex (cli_host.LIMIT_TEXT) is a heuristic; on a stop the
   raw CLI stdout/stderr are kept in the trial folder.
+
+## t10 room rules scaled + `must_not_block` (2026-11-07)
+
+**Why.** On t09 every model answer so far (Nemotron x1, Opus 5.5 via claude -p
+x3) locked the whole room: safe and live, but it serializes requests that can
+never conflict. t09 cannot tell that from the per-day reference.
+
+**Claude drafted**
+- Harness: scenario flag `must_not_block: true` (task.py). The scheduler's
+  existing `blocked` record (pg_blocking_pids at each quiescent point) is
+  exposed as `ScheduleResult.request_waits`; in such a scenario any schedule
+  with a request-to-request wait is a failure: `blocked_schedules`,
+  `live=false`, `liveness_reason: blocked_independent_requests` (scenario and
+  verdict), category concurrency. Counterexamples add a `BLOCKED (...)` line
+  naming who waited for whom; the re-run fingerprint already includes the
+  "blocked (waiting for Rn)" lines, so the wait must reproduce.
+- validate: `EXPECT: blocking` = fails liveness only by blocking, in
+  must_not_block scenarios only, and is otherwise safe and live.
+- t10_room_rules_scaled: t09 copied (setup, reference, w1-w4, all 8
+  scenarios, 14 solo checks) + the human's sentence in task.md + 4
+  must_not_block scenarios + w5 whole-room lock (`EXPECT: blocking`) +
+  `alternatives/serializable_retry.py` (graded, not validated).
+- SPEC §6.1, NOTES.md, summary shows `liveness_reason` and blocked counts.
+- Tests: whole-room lock fails (3 same-room scenarios blocked, different rooms
+  not), per-day advisory lock passes, waiting is fine without the flag (w5 on
+  t09 passes), EXPECT blocking parsing/acceptance, spec loading. Disabling
+  the rule fails the whole-room test.
+
+**Verified by Claude**
+- Validation (all exhaustive): reference 0 waits; w1-w4 unchanged and never
+  wait in the new scenarios; w5 blocked in 24/36, 46/74, 40/67 schedules.
+- SERIALIZABLE + retry passes, with no waits but a 40001 retry in most
+  schedules, including different rooms (60/70).
+
+**Human to review**
+- task.md sentence: you asked for ONE sentence and gave two ("This service
+  handles heavy traffic. Requests that ..."); both are in, verbatim.
+- "move into one day" scenario: the booking moves D3 -> D2 while D1 is booked,
+  so the two requests share no day (a D1 -> D2 move would touch D1 too).
+- SERIALIZABLE+retry passes t10 although it conflicts constantly; the rule is
+  "never wait", not "never conflict". Your call whether that is intended.

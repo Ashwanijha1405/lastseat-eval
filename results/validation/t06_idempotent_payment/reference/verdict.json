@@ -40,7 +40,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.13
+      "seconds": 0.15,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two attempts with the same key both get the payment id",
@@ -56,7 +59,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.14
+      "seconds": 0.14,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two different keys at the same moment",
@@ -72,7 +78,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.18
+      "seconds": 0.2,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -82,8 +91,9 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 0.63,
+  "seconds": 0.72,
   "failure_category": null
 }

@@ -62,6 +62,9 @@ class Scenario:
     # Safety invariants (task-wide first, then this scenario's) followed by
     # success checks (kind="success"; only in must_all_succeed scenarios).
     invariants: tuple[Invariant, ...]
+    # The requests are independent: a schedule in which one ever waits for a
+    # lock held by another fails liveness (blocked_independent_requests).
+    must_not_block: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,7 @@ def load_task(directory: Path | str) -> Task:
                 requests=tuple(requests),
                 must_all_succeed=must_all_succeed,
                 invariants=invariants + extra + success,
+                must_not_block=f.opt("must_not_block", bool, False),
             )
         )
         f.done()

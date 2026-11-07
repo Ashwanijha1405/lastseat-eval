@@ -73,3 +73,10 @@ def test_t06_success_means_returns_and_expect_return_is_optional():
     assert t06.success_means == "returns"
     assert all(c.expect_return is ANY_RETURN for c in t06.solo_checks)
     assert load_task(TASKS_DIR / "t01_flash_sale").success_means == "returns_true"
+
+
+def test_must_not_block_defaults_to_false_and_is_read_from_the_spec():
+    t09, t10 = load_task(TASKS_DIR / "t09_room_rules"), load_task(TASKS_DIR / "t10_room_rules_scaled")
+    assert not any(s.must_not_block for s in t09.scenarios)
+    assert [s.must_not_block for s in t10.scenarios] == [False] * 8 + [True] * 4
+    assert [s.name for s in t10.scenarios[:8]] == [s.name for s in t09.scenarios]   # t09's scenarios, unchanged

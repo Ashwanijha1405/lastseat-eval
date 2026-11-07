@@ -36,6 +36,7 @@ APP_ROLE = "lastseat_app"
 MAX_COUNTEREXAMPLES = 3
 SCORE_WEIGHTS = {"safety": 0.5, "solo": 0.25, "liveness": 0.25}
 VACUOUS_SAFETY = "vacuous_safety"
+BLOCKED = "blocked_independent_requests"
 
 
 @dataclass
@@ -62,6 +63,9 @@ class ScenarioResult:
     all_reproduced: bool
     counterexamples: list[str]
     seconds: float
+    must_not_block: bool = False
+    blocked_schedules: int = 0  # must_not_block only: schedules where a request waited for another
+    liveness_reason: str | None = None  # BLOCKED when blocking made the scenario not live
 
 
 @dataclass
@@ -76,6 +80,7 @@ class Verdict:
     scenarios: list[ScenarioResult] = field(default_factory=list)
     scores: dict[str, float] = field(default_factory=lambda: {**dict.fromkeys(SCORE_WEIGHTS, 0.0), "total": 0.0})
     safety_reason: str | None = None  # "vacuous_safety" when safety is zeroed for never succeeding
+    liveness_reason: str | None = None  # BLOCKED when a must_not_block scenario saw a request wait
     passed: bool = False
     reproducible: bool = True
     seconds: float = 0.0
@@ -157,6 +162,8 @@ def grade(task: Task, source: str, *, solution_label: str = "solution.py", conni
     verdict.scores = {k: SCORE_WEIGHTS[k] if ok else 0.0 for k, ok in components.items()}
     verdict.scores["total"] = sum(verdict.scores.values())
     verdict.passed = all(components.values())
+    if any(s.liveness_reason == BLOCKED for s in verdict.scenarios):
+        verdict.liveness_reason = BLOCKED
     verdict.reproducible = all(s.all_reproduced for s in verdict.scenarios)
     return verdict
 
@@ -226,12 +233,16 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
         )
         return not succeeded or not r.success_holds
 
+    def blocked(r: ScheduleResult) -> bool:
+        # Requests that must never wait for each other: any observed wait fails.
+        return sc.must_not_block and bool(r.request_waits)
+
     _build(task, solution, name, sc.seed_sql, conninfo)
     requests = [_call(solution, call) for call in sc.requests]
     try:
         with Explorer(name, requests, sc.invariants, role=APP_ROLE, conninfo=conninfo) as ex:
             exp = ex.explore(max_schedules=max_schedules, random_schedules=random_schedules, seed=seed,
-                             is_failure=lambda r: not r.invariants_hold or unlive(r))
+                             is_failure=lambda r: not r.invariants_hold or unlive(r) or blocked(r))
     finally:
         drop_database(name, conninfo)
 
@@ -248,6 +259,7 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
 
     unsafe = [r for r in exp.results if not r.invariants_hold]
     unlive_runs = [r for r in exp.results if unlive(r)]
+    blocked_runs = [r for r in exp.results if blocked(r)]
     return ScenarioResult(
         name=sc.name,
         must_all_succeed=sc.must_all_succeed,
@@ -257,22 +269,35 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
         exhaustive=exp.exhaustive,
         random_seed=exp.random_seed,
         safe=not unsafe,
-        live=not unlive_runs,
+        live=not unlive_runs and not blocked_runs,
         unsafe_schedules=len(unsafe),
         unlive_schedules=len(unlive_runs),
         all_reproduced=exp.all_reproduced,
-        counterexamples=[header + r.trace() + f"reproduced on re-run: {r.reproduced}\n"
-                         for r in _distinct(exp)],
+        counterexamples=[header + r.trace() + _waits_note(r, blocked(r)) + f"reproduced on re-run: {r.reproduced}\n"
+                         for r in _distinct(exp, blocked)],
         seconds=round(time.monotonic() - started, 2),
+        must_not_block=sc.must_not_block,
+        blocked_schedules=len(blocked_runs),
+        liveness_reason=BLOCKED if blocked_runs else None,
     )
 
 
-def _distinct(exp: Exploration) -> list[ScheduleResult]:
+def _waits_note(r: ScheduleResult, is_blocked: bool) -> str:
+    if not is_blocked:
+        return ""
+    waits = "; ".join(f"R{req + 1} waited for {', '.join(f'R{b + 1}' for b in by)} at step {step}"
+                      for step, req, by in r.request_waits)
+    return f"BLOCKED ({BLOCKED}): these requests must never wait for each other: {waits}\n"
+
+
+def _distinct(exp: Exploration, blocked=lambda r: False) -> list[ScheduleResult]:
     """First failing schedule of each failure pattern (which invariants broke,
-    how each request ended), at most MAX_COUNTEREXAMPLES."""
+    how each request ended, whether independent requests waited), at most
+    MAX_COUNTEREXAMPLES."""
     seen, picked = set(), []
     for r in exp.failures:
-        pattern = (tuple(i.name for i in r.invariants if not i.holds), tuple(o.fingerprint for o in r.outcomes))
+        pattern = (tuple(i.name for i in r.invariants if not i.holds), tuple(o.fingerprint for o in r.outcomes),
+                   blocked(r))
         if pattern not in seen:
             seen.add(pattern)
             picked.append(r)

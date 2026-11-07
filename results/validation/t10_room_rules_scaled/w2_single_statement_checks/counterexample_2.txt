@@ -1,0 +1,15 @@
+scenario: two overlapping bookings of a free slot
+R1: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 9, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc))
+R2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 9, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 1, 1, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 09:00:00+00:00'::timestamptz, '2026-11-09 10:00:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings o WHERE o.room_id = 1 AND o.id IS DISTINCT FROM NULL AND o.starts_at < '2026-11-09 10:00:00+00:00'::timestamptz AND '2026-11-09 09:00:00+00:00'::timestamptz < o.ends_at) AND (SELECT count(*) FROM bookings d WHERE d.room_id = 1 AND d.id IS DISTINCT FROM NULL AND (d.starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 09:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) < 3 RETURNING id -> INSERT 0 1 [(1,)]
+step 3   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 4   R2  INSERT INTO bookings (room_id, starts_at, ends_at) SELECT 1, '2026-11-09 09:30:00+00:00'::timestamptz, '2026-11-09 10:30:00+00:00'::timestamptz WHERE NOT EXISTS (SELECT 1 FROM bookings o WHERE o.room_id = 1 AND o.id IS DISTINCT FROM NULL AND o.starts_at < '2026-11-09 10:30:00+00:00'::timestamptz AND '2026-11-09 09:30:00+00:00'::timestamptz < o.ends_at) AND (SELECT count(*) FROM bookings d WHERE d.room_id = 1 AND d.id IS DISTINCT FROM NULL AND (d.starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 09:30:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) < 3 RETURNING id -> INSERT 0 1 [(2,)]
+step 5   R1  COMMIT -> COMMIT
+         R1  returned True
+step 6   R2  COMMIT -> COMMIT
+         R2  returned True
+INVARIANT VIOLATED: no two bookings of the same room overlap  (got [(False,)])
+invariant ok: no room has more than 3 bookings on a UTC day
+reproduced on re-run: True

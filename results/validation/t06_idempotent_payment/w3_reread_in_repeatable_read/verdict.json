@@ -40,7 +40,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.38
+      "seconds": 0.39,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two attempts with the same key both get the payment id",
@@ -59,7 +62,10 @@
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> INSERT 0 1 [(1,)]\nstep 3   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 4   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> blocked (waiting for R1)\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned 1\n         R2  step 4 resumed -> ERROR 40001 SerializationFailure: could not serialize access due to concurrent update\n         R2  function ended inside an open transaction; harness rolled it back\n         R2  raised SerializationFailure (40001): could not serialize access due to concurrent update\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nwarning: R2: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n",
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 3   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id -> blocked (waiting for R2)\nstep 5   R2  COMMIT -> COMMIT\n         R2  returned 1\n         R1  step 4 resumed -> ERROR 40001 SerializationFailure: could not serialize access due to concurrent update\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised SerializationFailure (40001): could not serialize access due to concurrent update\ninvariant ok: at most one payment per idempotency key\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(None,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
       ],
-      "seconds": 0.53
+      "seconds": 0.57,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     },
     {
       "name": "two different keys at the same moment",
@@ -75,7 +81,10 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.61
+      "seconds": 0.52,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
     }
   ],
   "scores": {
@@ -85,8 +94,9 @@
     "total": 0.75
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 1.71,
+  "seconds": 1.67,
   "failure_category": "concurrency"
 }

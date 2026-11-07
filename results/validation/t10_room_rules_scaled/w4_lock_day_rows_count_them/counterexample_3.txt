@@ -1,0 +1,20 @@
+scenario: two moves from different days, for the last place of a day
+R1: reschedule(db, booking_id=1, new_starts_at=datetime.datetime(2026, 11, 10, 13, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 10, 14, 0, tzinfo=datetime.timezone.utc))
+R2: reschedule(db, booking_id=2, new_starts_at=datetime.datetime(2026, 11, 10, 15, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 10, 16, 0, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 0, 0, 1, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]
+step 3   R1  SELECT id FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 1 AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 13:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date FOR UPDATE -> [(3,), (4,)]
+step 4   R1  UPDATE bookings SET starts_at = '2026-11-10 13:00:00+00:00'::timestamptz, ends_at = '2026-11-10 14:00:00+00:00'::timestamptz WHERE id = 1 RETURNING id -> UPDATE 1 [(1,)]
+step 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 6   R2  SELECT room_id FROM bookings WHERE id = 2 -> [(1,)]
+step 7   R2  SELECT id FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 2 AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 15:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date FOR UPDATE -> blocked (waiting for R1)
+step 8   R1  COMMIT -> COMMIT
+         R1  returned True
+         R2  step 7 resumed -> [(3,), (4,)]
+step 9   R2  UPDATE bookings SET starts_at = '2026-11-10 15:00:00+00:00'::timestamptz, ends_at = '2026-11-10 16:00:00+00:00'::timestamptz WHERE id = 2 RETURNING id -> UPDATE 1 [(2,)]
+step 10  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: no two bookings of the same room overlap
+INVARIANT VIOLATED: no room has more than 3 bookings on a UTC day  (got [(False,)])
+reproduced on re-run: True
