@@ -66,7 +66,7 @@ switch ($Command) {
             "  official-cli ... -ReuseFrom <id>[,<id>]   copy answered trials (same model/CLI/effort/prompt), graded again",
             "  official-cli -Cli antigravity -Model gemini-3.8-flash-high ...  Gemini via Antigravity CLI (agy --print)",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
-            ".\run.ps1 run [-Yes]                        5 trials",
+            ".\run.ps1 run [-Yes] [-Trials n]            5 trials unless -Trials is given",
             "  run/pilot options: -Config free|paid (default free) -Run <id> -New -From <pilot id>",
             "                     -Jobs <n> -Task <id>[,<id>] -Model <slug>[,<slug>]",
             "  A pilot/run resumes only an unfinished run with the same tasks, models and trials;",
@@ -113,7 +113,11 @@ switch ($Command) {
     }
     "dry-run" { Start-Db; Invoke-Eval ((Get-RunnerArgs 1) + "--dry-run") }
     "pilot" { Start-Db; Invoke-Eval (Get-RunnerArgs 1) }
-    "run" { Start-Db; Invoke-Eval (Get-RunnerArgs 5) }
+    "run" {
+        Start-Db
+        $n = if ($PSBoundParameters.ContainsKey("Trials")) { $Trials } else { 5 }
+        Invoke-Eval (Get-RunnerArgs $n)
+    }
     "psql" { Start-Db; Invoke-Checked @("docker", "compose", "exec", "db", "psql", "-U", "lastseat", "-d", "lastseat") }
     "shell" { Start-Db; Invoke-Eval @("bash") }
     default { Write-Output "unknown command '$Command'; try .\run.ps1 help"; exit 2 }

@@ -84,7 +84,7 @@ def reuse(run_dir: Path, meta: dict, src: Path) -> str | None:
     src_meta = json.loads((src / "run_meta.json").read_text(encoding="utf-8"))
     mine, theirs = meta["models"][0], src_meta["models"][0]
     for what, a, b in (("source", SOURCE, src_meta.get("source")), ("model", mine["id"], theirs["id"]),
-                       ("cli", meta["cli"]["name"], src_meta["cli"]["name"]),
+                       ("cli", meta["cli"]["name"], src_meta["cli"].get("name", "claude")),  # runs before agy: claude
                        ("effort", meta["cli"]["effort"], src_meta["cli"]["effort"])):
         if a != b:
             return f"{what} differs ({b!r}, this run has {a!r})"
