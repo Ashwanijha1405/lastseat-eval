@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from psycopg import errors
+
+EPOCH = date(2000, 1, 1)
+
+
+def _get_day_info(dt: datetime) -> tuple[int, datetime, datetime]:
+    if dt.tzinfo is None:
+        utc_dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        utc_dt = dt.astimezone(timezone.utc)
+    utc_date = utc_dt.date()
+    day_start = datetime(
+        utc_date.year, utc_date.month, utc_date.day, 0, 0, 0, tzinfo=timezone.utc
+    )
+    day_end = day_start + timedelta(days=1)
+    day_offset = (utc_date - EPOCH).days
+    return day_offset, day_start, day_end
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bookings_room_starts ON bookings (room_id, starts_at, ends_at)"
+    )
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    day_offset, day_start, day_end = _get_day_info(starts_at)
+    for _ in range(5):
+        try:
+            db.begin()
+            db.execute(
+                "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+                (room_id, day_offset),
+            )
+            rows = db.execute(
+                """
+                SELECT count(*),
+                       coalesce(bool_or(starts_at < %(ends_at)s AND ends_at > %(starts_at)s), false)
+                FROM bookings
+                WHERE room_id = %(room_id)s
+                  AND starts_at >= %(day_start)s
+                  AND starts_at < %(day_end)s
+                """,
+                {
+                    "room_id": room_id,
+                    "starts_at": starts_at,
+                    "ends_at": ends_at,
+                    "day_start": day_start,
+                    "day_end": day_end,
+                },
+            )
+            cnt, has_overlap = rows[0]
+            if cnt < 3 and not has_overlap:
+                db.execute(
+                    """
+                    INSERT INTO bookings (room_id, starts_at, ends_at)
+                    VALUES (%(room_id)s, %(starts_at)s, %(ends_at)s)
+                    """,
+                    {
+                        "room_id": room_id,
+                        "starts_at": starts_at,
+                        "ends_at": ends_at,
+                    },
+                )
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+
+
+def reschedule(
+    db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime
+) -> bool:
+    new_day_offset, new_day_start, new_day_end = _get_day_info(new_starts_at)
+    for _ in range(5):
+        try:
+            db.begin()
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+
+            room_id, old_starts_at = rows[0]
+            old_day_offset, _, _ = _get_day_info(old_starts_at)
+
+            if old_day_offset == new_day_offset:
+                db.execute(
+                    "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+                    (room_id, old_day_offset),
+                )
+            else:
+                d1, d2 = (
+                    (old_day_offset, new_day_offset)
+                    if old_day_offset < new_day_offset
+                    else (new_day_offset, old_day_offset)
+                )
+                db.execute(
+                    "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+                    (room_id, d1),
+                )
+                db.execute(
+                    "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+                    (room_id, d2),
+                )
+
+            rows = db.execute(
+                """
+                SELECT count(*),
+                       coalesce(bool_or(starts_at < %(new_ends_at)s AND ends_at > %(new_starts_at)s), false)
+                FROM bookings
+                WHERE room_id = %(room_id)s
+                  AND id != %(booking_id)s
+                  AND starts_at >= %(new_day_start)s
+                  AND starts_at < %(new_day_end)s
+                """,
+                {
+                    "room_id": room_id,
+                    "booking_id": booking_id,
+                    "new_starts_at": new_starts_at,
+                    "new_ends_at": new_ends_at,
+                    "new_day_start": new_day_start,
+                    "new_day_end": new_day_end,
+                },
+            )
+            cnt, has_overlap = rows[0]
+            if cnt < 3 and not has_overlap:
+                db.execute(
+                    """
+                    UPDATE bookings
+                    SET starts_at = %(new_starts_at)s, ends_at = %(new_ends_at)s
+                    WHERE id = %(booking_id)s
+                    """,
+                    {
+                        "booking_id": booking_id,
+                        "new_starts_at": new_starts_at,
+                        "new_ends_at": new_ends_at,
+                    },
+                )
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    for _ in range(5):
+        try:
+            db.begin()
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+
+            room_id, starts_at = rows[0]
+            day_offset, _, _ = _get_day_info(starts_at)
+            db.execute(
+                "SELECT pg_advisory_xact_lock(%s::int, %s::int)",
+                (room_id, day_offset),
+            )
+            db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            db.commit()
+            return True
+        except errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False

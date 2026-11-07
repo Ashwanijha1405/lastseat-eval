@@ -1,0 +1,86 @@
+{
+  "run_id": "20261107T091530Z-cli",
+  "source": "official-cli",
+  "signature": {
+    "config": "official-cli:antigravity",
+    "models": [
+      "gemini-3.8-flash-high"
+    ],
+    "tasks": [
+      "t03_expense_budget",
+      "t08_expense_endpoints",
+      "t09_room_rules",
+      "t10_room_rules_scaled"
+    ],
+    "trials": 3,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-07T09:15:32+00:00",
+  "git_commit": "4e4be5f6f45d7fbda8444513b73a1d18677e854f",
+  "dry_run": false,
+  "trials": 3,
+  "config": "official-cli:antigravity",
+  "tier": "subscription",
+  "tasks": [
+    "t03_expense_budget",
+    "t08_expense_endpoints",
+    "t09_room_rules",
+    "t10_room_rules_scaled"
+  ],
+  "models": [
+    {
+      "slug": "gemini-3.8-flash-high",
+      "id": "gemini-3.8-flash-high",
+      "source": "official-cli"
+    }
+  ],
+  "cli": {
+    "name": "antigravity",
+    "effort": "set by the model id",
+    "version": "1.5.3",
+    "command": [
+      "agy.EXE",
+      "--print",
+      "",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "gemini-3.8-flash-high",
+      "--settings",
+      "{\"permissions\":{\"allow\":[],\"ask\":[],\"deny\":[\"read_file(*)\",\"write_file(*)\",\"command(*)\",\"unsandboxed(*)\",\"read_url(*)\",\"execute_url(*)\",\"mcp(*)\"]},\"toolPermission\":\"strict\",\"disableSlashCommands\":true,\"enableTerminalSandbox\":true}",
+      "--disable-slash-commands",
+      "--print-timeout",
+      "1740s"
+    ],
+    "system_prompt_note": "Answers come from Antigravity CLI print mode (agy --print), Google's CLI for free personal accounts (it replaced Gemini CLI for them on 2026-06-18). Its own agent system prompt and tool list are included (about 8.5k input tokens for a one-word prompt); every tool action is denied by --settings, so it can only answer in text. Not directly comparable with API/OpenRouter cells.",
+    "env_dropped": "ANTHROPIC_*, CLAUDE*, OPENROUTER_*, GEMINI_*, GOOGLE_API_KEY, GOOGLE_GENAI*, GOOGLE_CLOUD*, GOOGLE_APPLICATION_CREDENTIALS, LASTSEAT_*"
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "spent_usd": 0.0,
+  "complete": true,
+  "sessions": [
+    {
+      "started_utc": "2026-11-07T09:15:34+00:00",
+      "cli_version": "1.5.3",
+      "calls": 1,
+      "finished_utc": "2026-11-07T09:22:39+00:00",
+      "stopped_reason": "gemini-3.8-flash-high/t03_expense_budget/trial_1: cli_error: exit 0, status ERROR: The stream was interrupted. Please continue the task you were working on."
+    },
+    {
+      "started_utc": "2026-11-07T09:26:53+00:00",
+      "cli_version": "1.5.3",
+      "calls": 13,
+      "finished_utc": "2026-11-07T10:48:10+00:00"
+    }
+  ],
+  "api_calls": 14
+}

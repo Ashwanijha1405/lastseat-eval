@@ -1,0 +1,75 @@
+```python
+from __future__ import annotations
+
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_dept_approved "
+        "ON expenses (department_id, amount) "
+        "WHERE status = 'approved'"
+    )
+    db.execute("ANALYZE expenses")
+    db.execute("ANALYZE departments")
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    max_retries = 8
+    for attempt in range(max_retries):
+        try:
+            db.begin(isolation="read committed")
+
+            # Exclusively lock the department row to serialize concurrent approvals for this department.
+            lock_rows = db.execute(
+                "SELECT id, budget FROM departments "
+                "WHERE id = (SELECT department_id FROM expenses WHERE id = %s) "
+                "FOR UPDATE",
+                (expense_id,),
+            )
+            if not lock_rows:
+                db.rollback()
+                return False
+
+            dept_id, budget = lock_rows[0]
+
+            # In read committed mode, this query sees all transactions committed prior to statement start.
+            expense_rows = db.execute(
+                "SELECT e.amount, e.status, "
+                "(SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                " WHERE department_id = %s AND status = 'approved') "
+                "FROM expenses e WHERE e.id = %s",
+                (dept_id, expense_id),
+            )
+            if not expense_rows:
+                db.rollback()
+                return False
+
+            amount, status, approved_total = expense_rows[0]
+
+            # Check if pending and fits within budget
+            if status != "pending" or approved_total + amount > budget:
+                db.rollback()
+                return False
+
+            updated = db.execute(
+                "UPDATE expenses SET status = 'approved' "
+                "WHERE id = %s AND status = 'pending' "
+                "RETURNING id",
+                (expense_id,),
+            )
+            if not updated:
+                db.rollback()
+                return False
+
+            db.commit()
+            return True
+
+        except errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt == max_retries - 1:
+                raise
+```

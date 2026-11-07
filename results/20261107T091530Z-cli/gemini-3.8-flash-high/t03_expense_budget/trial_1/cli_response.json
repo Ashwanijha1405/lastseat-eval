@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_expenses_approved \"\n        \"ON expenses (department_id, amount) WHERE status = 'approved'\"\n    )\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    for attempt in range(5):\n        try:\n            db.begin(\"read committed\")\n\n            # Lock the target expense row first\n            rows = db.execute(\n                \"SELECT department_id, amount, status FROM expenses WHERE id = %(id)s FOR UPDATE\",\n                {\"id\": expense_id},\n            )\n            if not rows:\n                db.rollback()\n                return False\n\n            dept_id, amount, status = rows[0]\n            if status != \"pending\":\n                db.rollback()\n                return False\n\n            # Lock the department row to serialize budget checks for this department\n            dept_rows = db.execute(\n                \"SELECT budget FROM departments WHERE id = %(dept_id)s FOR UPDATE\",\n                {\"dept_id\": dept_id},\n            )\n            if not dept_rows:\n                db.rollback()\n                return False\n\n            budget = dept_rows[0][0]\n\n            # Calculate total approved expenses for this department in a fresh snapshot\n            sum_rows = db.execute(\n                \"SELECT COALESCE(SUM(amount), 0) FROM expenses \"\n                \"WHERE department_id = %(dept_id)s AND status = 'approved'\",\n                {\"dept_id\": dept_id},\n            )\n            current_approved = sum_rows[0][0]\n\n            if current_approved + amount <= budget:\n                updated = db.execute(\n                    \"UPDATE expenses SET status = 'approved' \"\n                    \"WHERE id = %(id)s AND status = 'pending' \"\n                    \"RETURNING id\",\n                    {\"id\": expense_id},\n                )\n                if not updated:\n                    db.rollback()\n                    return False\n                db.commit()\n                return True\n            else:\n                db.rollback()\n                return False\n\n        except (errors.SerializationFailure, errors.DeadlockDetected):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            if attempt == 4:\n                raise\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 47990,
+    "output_tokens": 36220,
+    "thinking_tokens": 35657,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

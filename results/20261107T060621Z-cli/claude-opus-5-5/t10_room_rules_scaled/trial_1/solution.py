@@ -1,0 +1,113 @@
+import datetime as _dt
+from psycopg import errors
+
+_UTC = _dt.timezone.utc
+_MAX_ATTEMPTS = 5
+_RETRYABLE = (errors.SerializationFailure, errors.DeadlockDetected, errors.LockNotAvailable)
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_starts_idx "
+        "ON bookings (room_id, starts_at)"
+    )
+
+
+def _day_key(ts: _dt.datetime) -> int:
+    return ts.astimezone(_UTC).date().toordinal()
+
+
+def _day_bounds(key: int):
+    d = _dt.date.fromordinal(key)
+    start = _dt.datetime(d.year, d.month, d.day, tzinfo=_UTC)
+    return start, start + _dt.timedelta(days=1)
+
+
+def _lock_day(db, room_id: int, key: int) -> None:
+    db.execute("SELECT pg_advisory_xact_lock(%s::int, %s::int)", (room_id, key))
+
+
+def _fits(db, room_id: int, exclude_id, starts_at, ends_at, key: int) -> bool:
+    ex = -1 if exclude_id is None else exclude_id
+    rows = db.execute(
+        "SELECT 1 FROM bookings WHERE room_id = %s AND id <> %s "
+        "AND starts_at < %s AND ends_at > %s LIMIT 1",
+        (room_id, ex, ends_at, starts_at),
+    )
+    if rows:
+        return False
+    day_start, day_end = _day_bounds(key)
+    rows = db.execute(
+        "SELECT count(*) FROM bookings WHERE room_id = %s AND id <> %s "
+        "AND starts_at >= %s AND starts_at < %s",
+        (room_id, ex, day_start, day_end),
+    )
+    return rows[0][0] < 3
+
+
+def book(db, room_id: int, starts_at: _dt.datetime, ends_at: _dt.datetime) -> bool:
+    key = _day_key(starts_at)
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            db.begin("read committed")
+            _lock_day(db, room_id, key)
+            if not _fits(db, room_id, None, starts_at, ends_at, key):
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: _dt.datetime,
+               new_ends_at: _dt.datetime) -> bool:
+    new_key = _day_key(new_starts_at)
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            room_id, old_starts = rows[0]
+            old_key = _day_key(old_starts)
+            for k in sorted({old_key, new_key}):
+                _lock_day(db, room_id, k)
+            if not _fits(db, room_id, booking_id, new_starts_at, new_ends_at, new_key):
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            rows = db.execute(
+                "DELETE FROM bookings WHERE id = %s RETURNING id", (booking_id,)
+            )
+            return bool(rows)
+        except _RETRYABLE:
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+    return False

@@ -1,0 +1,71 @@
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_approved "
+        "ON expenses (department_id, amount) WHERE status = 'approved'"
+    )
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    for attempt in range(5):
+        try:
+            db.begin("read committed")
+
+            # Lock the target expense row first
+            rows = db.execute(
+                "SELECT department_id, amount, status FROM expenses WHERE id = %(id)s FOR UPDATE",
+                {"id": expense_id},
+            )
+            if not rows:
+                db.rollback()
+                return False
+
+            dept_id, amount, status = rows[0]
+            if status != "pending":
+                db.rollback()
+                return False
+
+            # Lock the department row to serialize budget checks for this department
+            dept_rows = db.execute(
+                "SELECT budget FROM departments WHERE id = %(dept_id)s FOR UPDATE",
+                {"dept_id": dept_id},
+            )
+            if not dept_rows:
+                db.rollback()
+                return False
+
+            budget = dept_rows[0][0]
+
+            # Calculate total approved expenses for this department in a fresh snapshot
+            sum_rows = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %(dept_id)s AND status = 'approved'",
+                {"dept_id": dept_id},
+            )
+            current_approved = sum_rows[0][0]
+
+            if current_approved + amount <= budget:
+                updated = db.execute(
+                    "UPDATE expenses SET status = 'approved' "
+                    "WHERE id = %(id)s AND status = 'pending' "
+                    "RETURNING id",
+                    {"id": expense_id},
+                )
+                if not updated:
+                    db.rollback()
+                    return False
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+
+        except (errors.SerializationFailure, errors.DeadlockDetected):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt == 4:
+                raise
