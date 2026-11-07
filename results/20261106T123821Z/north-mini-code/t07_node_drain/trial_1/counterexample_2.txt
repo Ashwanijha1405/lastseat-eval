@@ -1,0 +1,49 @@
+scenario: two drains of nodes with no shared shard
+R1: drain_node(db, node_id='A')
+R2: drain_node(db, node_id='B')
+schedule choices: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+step 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 2   R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true -> [(1,)]
+step 3   R1  SELECT * FROM replicas WHERE (node_id = 'A' AND active = true) OR (shard_id IN '(1)' AND node_id != 'A' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 4   R1  ROLLBACK -> ROLLBACK
+step 5   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 6   R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true -> [(1,)]
+step 7   R1  SELECT * FROM replicas WHERE (node_id = 'A' AND active = true) OR (shard_id IN '(1)' AND node_id != 'A' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 8   R1  ROLLBACK -> ROLLBACK
+step 9   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 10  R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true -> [(1,)]
+step 11  R1  SELECT * FROM replicas WHERE (node_id = 'A' AND active = true) OR (shard_id IN '(1)' AND node_id != 'A' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 12  R1  ROLLBACK -> ROLLBACK
+step 13  R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 14  R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true -> [(1,)]
+step 15  R1  SELECT * FROM replicas WHERE (node_id = 'A' AND active = true) OR (shard_id IN '(1)' AND node_id != 'A' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 16  R1  ROLLBACK -> ROLLBACK
+step 17  R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 18  R1  SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true -> [(1,)]
+step 19  R1  SELECT * FROM replicas WHERE (node_id = 'A' AND active = true) OR (shard_id IN '(1)' AND node_id != 'A' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 20  R1  ROLLBACK -> ROLLBACK
+         R1  raised RuntimeError: Failed to drain node after retries
+step 21  R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 22  R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true -> [(2,)]
+step 23  R2  SELECT * FROM replicas WHERE (node_id = 'B' AND active = true) OR (shard_id IN '(2)' AND node_id != 'B' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 24  R2  ROLLBACK -> ROLLBACK
+step 25  R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 26  R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true -> [(2,)]
+step 27  R2  SELECT * FROM replicas WHERE (node_id = 'B' AND active = true) OR (shard_id IN '(2)' AND node_id != 'B' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 28  R2  ROLLBACK -> ROLLBACK
+step 29  R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 30  R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true -> [(2,)]
+step 31  R2  SELECT * FROM replicas WHERE (node_id = 'B' AND active = true) OR (shard_id IN '(2)' AND node_id != 'B' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 32  R2  ROLLBACK -> ROLLBACK
+step 33  R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 34  R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true -> [(2,)]
+step 35  R2  SELECT * FROM replicas WHERE (node_id = 'B' AND active = true) OR (shard_id IN '(2)' AND node_id != 'B' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 36  R2  ROLLBACK -> ROLLBACK
+step 37  R2  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 38  R2  SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true -> [(2,)]
+step 39  R2  SELECT * FROM replicas WHERE (node_id = 'B' AND active = true) OR (shard_id IN '(2)' AND node_id != 'B' AND active = true) ORDER BY shard_id, node_id FOR UPDATE -> ERROR 42601 SyntaxError: syntax error at or near "$2"
+step 40  R2  ROLLBACK -> ROLLBACK
+         R2  raised RuntimeError: Failed to drain node after retries
+invariant ok: every shard has at least one active replica
+SUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])
+reproduced on re-run: True

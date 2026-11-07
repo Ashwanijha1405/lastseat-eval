@@ -1,0 +1,106 @@
+{
+  "run_id": "20261107T001717Z",
+  "signature": {
+    "config": "config/models.free.yaml",
+    "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "google/gemma-4-31b-it:free"
+    ],
+    "tasks": [
+      "t01_flash_sale",
+      "t02_on_call",
+      "t03_expense_budget",
+      "t04_room_booking",
+      "t05_wallet_transfer",
+      "t06_idempotent_payment",
+      "t07_node_drain",
+      "t08_expense_endpoints",
+      "t09_room_rules"
+    ],
+    "trials": 1,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-07T00:17:17+00:00",
+  "git_commit": "47beef49fed4bd9feb9323a79d78fbb010e0ebaf",
+  "dry_run": false,
+  "trials": 1,
+  "config": "config/models.free.yaml",
+  "tier": "free",
+  "limits": {
+    "min_interval_s": 4,
+    "daily_requests": 50,
+    "max_attempts": 4
+  },
+  "tasks": [
+    "t01_flash_sale",
+    "t02_on_call",
+    "t03_expense_budget",
+    "t04_room_booking",
+    "t05_wallet_transfer",
+    "t06_idempotent_payment",
+    "t07_node_drain",
+    "t08_expense_endpoints",
+    "t09_room_rules"
+  ],
+  "models": [
+    {
+      "slug": "nemotron-3-ultra",
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:free"
+    },
+    {
+      "slug": "gemma-4-31b",
+      "id": "google/gemma-4-31b-it:free"
+    }
+  ],
+  "settings_sent": {
+    "max_tokens": 32000,
+    "reasoning": {
+      "effort": "high"
+    },
+    "provider": {
+      "max_price": {
+        "prompt": 0,
+        "completion": 0,
+        "request": 0,
+        "image": 0
+      }
+    }
+  },
+  "list_prices_usd_per_token": {
+    "nvidia/nemotron-3-ultra-550b-a55b:free": [
+      0.0,
+      0.0
+    ],
+    "google/gemma-4-31b-it:free": [
+      0.0,
+      0.0
+    ]
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "grading_jobs": 2,
+  "budget_limit_usd": 0.0,
+  "complete": false,
+  "sessions": [
+    {
+      "started_utc": "2026-11-07T00:17:17+00:00",
+      "git_commit": "47beef49fed4bd9feb9323a79d78fbb010e0ebaf",
+      "api_calls": 9,
+      "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i",
+      "api_failures": [
+        "gemma-4-31b/t01_flash_sale/trial_1: rate_limited: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
+      ],
+      "finished_utc": "2026-11-07T00:40:51+00:00"
+    }
+  ],
+  "spent_usd": 0.0,
+  "api_calls": 9,
+  "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i",
+  "notes": "Extra pilot run, not planned. Started by accident on 2026-11-07 00:17 UTC: the scheduled Gemma retry re-ran `pilot -Yes -Jobs 2` expecting to resume 20261106T123821Z, but t08/t09 had been added, so the task list no longer matched and the runner started a new run. It asked Nemotron all 9 tasks (9 free requests, $0) before Gemma was refused (429 rate-limited upstream). Kept by the human's decision as an extra Nemotron trial."
+}

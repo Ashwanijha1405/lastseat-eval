@@ -1,0 +1,96 @@
+def approve_expense(db, expense_id: int) -> bool:
+    db.begin()
+    try:
+        # Get the department_id (immutable)
+        rows = db.execute("SELECT department_id FROM expenses WHERE id = %s", (expense_id,))
+        dept_id = rows[0][0]
+
+        # Lock the department row to serialize all changes to its approved total / budget
+        db.execute("SELECT 1 FROM departments WHERE id = %s FOR UPDATE", (dept_id,))
+
+        # Re-read the expense now that we hold the department lock
+        rows = db.execute("SELECT status, amount FROM expenses WHERE id = %s", (expense_id,))
+        status, amount = rows[0]
+
+        if status != "pending":
+            db.commit()
+            return False
+
+        # Fetch current budget
+        rows = db.execute("SELECT budget FROM departments WHERE id = %s", (dept_id,))
+        budget = rows[0][0]
+
+        # Compute current approved total for the department
+        rows = db.execute(
+            "SELECT COALESCE(SUM(amount),0) FROM expenses WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )
+        approved_total = rows[0][0]
+
+        if approved_total + amount <= budget:
+            db.execute("UPDATE expenses SET status = 'approved' WHERE id = %s", (expense_id,))
+            db.commit()
+            return True
+        else:
+            db.commit()
+            return False
+    except Exception:
+        db.rollback()
+        raise
+
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    db.begin()
+    try:
+        rows = db.execute("SELECT department_id FROM expenses WHERE id = %s", (expense_id,))
+        dept_id = rows[0][0]
+
+        db.execute("SELECT 1 FROM departments WHERE id = %s FOR UPDATE", (dept_id,))
+
+        rows = db.execute("SELECT status, amount FROM expenses WHERE id = %s", (expense_id,))
+        status, old_amount = rows[0]
+
+        if status == "approved":
+            rows = db.execute("SELECT budget FROM departments WHERE id = %s", (dept_id,))
+            budget = rows[0][0]
+
+            rows = db.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM expenses WHERE department_id = %s AND status = 'approved'",
+                (dept_id,),
+            )
+            approved_total = rows[0][0]
+
+            # approved_total includes old_amount; check the new total
+            if approved_total - old_amount + new_amount > budget:
+                db.commit()
+                return False
+
+        db.execute("UPDATE expenses SET amount = %s WHERE id = %s", (new_amount, expense_id))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    db.begin()
+    try:
+        db.execute("SELECT 1 FROM departments WHERE id = %s FOR UPDATE", (dept_id,))
+
+        rows = db.execute(
+            "SELECT COALESCE(SUM(amount),0) FROM expenses WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )
+        approved_total = rows[0][0]
+
+        if approved_total <= new_budget:
+            db.execute("UPDATE departments SET budget = %s WHERE id = %s", (new_budget, dept_id))
+            db.commit()
+            return True
+        else:
+            db.commit()
+            return False
+    except Exception:
+        db.rollback()
+        raise

@@ -1,0 +1,168 @@
+```python
+import psycopg.errors
+
+_MAX_RETRIES = 3
+
+
+def _retry_transient(fn):
+    """Run a transaction function with retries on transient errors."""
+    def wrapper(db, *args, **kwargs):
+        for _ in range(_MAX_RETRIES):
+            try:
+                return fn(db, *args, **kwargs)
+            except (psycopg.errors.SerializationFailure,
+                    psycopg.errors.DeadlockDetected,
+                    psycopg.errors.LockNotAvailable):
+                # Transient error – roll back and retry immediately
+                db.rollback()
+            except psycopg.errors.Error:
+                # Other database error – treat as refusal
+                db.rollback()
+                return False
+            except Exception:
+                # Any other exception – treat as refusal
+                db.rollback()
+                return False
+        return False
+    return wrapper
+
+
+@_retry_transient
+def approve_expense(db, expense_id: int) -> bool:
+    db.begin("read committed")
+    # Lock the department row first (consistent order: department then expense)
+    dept_rows = db.execute(
+        "SELECT d.id, d.budget "
+        "FROM departments d "
+        "JOIN expenses e ON e.department_id = d.id "
+        "WHERE e.id = %(eid)s "
+        "FOR UPDATE OF d",
+        {"eid": expense_id}
+    )
+    if not dept_rows:
+        db.rollback()
+        return False
+    dept_id, budget = dept_rows[0]
+
+    # Lock the expense row and read its current state
+    exp_rows = db.execute(
+        "SELECT id, department_id, amount, status "
+        "FROM expenses "
+        "WHERE id = %(eid)s "
+        "FOR UPDATE",
+        {"eid": expense_id}
+    )
+    if not exp_rows:
+        db.rollback()
+        return False
+    _, _, amount, status = exp_rows[0]
+
+    if status != "pending":
+        db.rollback()
+        return False
+
+    # Current approved total for the department
+    total_rows = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) "
+        "FROM expenses "
+        "WHERE department_id = %(did)s AND status = 'approved'",
+        {"did": dept_id}
+    )
+    approved_total = total_rows[0][0]
+
+    if approved_total + amount > budget:
+        db.rollback()
+        return False
+
+    db.execute(
+        "UPDATE expenses SET status = 'approved' WHERE id = %(eid)s",
+        {"eid": expense_id}
+    )
+    db.commit()
+    return True
+
+
+@_retry_transient
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    db.begin("read committed")
+    # Lock department row first
+    dept_rows = db.execute(
+        "SELECT d.id, d.budget "
+        "FROM departments d "
+        "JOIN expenses e ON e.department_id = d.id "
+        "WHERE e.id = %(eid)s "
+        "FOR UPDATE OF d",
+        {"eid": expense_id}
+    )
+    if not dept_rows:
+        db.rollback()
+        return False
+    dept_id, budget = dept_rows[0]
+
+    # Lock expense row and read its current state
+    exp_rows = db.execute(
+        "SELECT id, department_id, amount, status "
+        "FROM expenses "
+        "WHERE id = %(eid)s "
+        "FOR UPDATE",
+        {"eid": expense_id}
+    )
+    if not exp_rows:
+        db.rollback()
+        return False
+    _, _, old_amount, status = exp_rows[0]
+
+    if status == "approved":
+        # Current approved total (includes this expense)
+        total_rows = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) "
+            "FROM expenses "
+            "WHERE department_id = %(did)s AND status = 'approved'",
+            {"did": dept_id}
+        )
+        approved_total = total_rows[0][0]
+        new_total = approved_total - old_amount + new_amount
+        if new_total > budget:
+            db.rollback()
+            return False
+
+    db.execute(
+        "UPDATE expenses SET amount = %(amt)s WHERE id = %(eid)s",
+        {"amt": new_amount, "eid": expense_id}
+    )
+    db.commit()
+    return True
+
+
+@_retry_transient
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    db.begin("read committed")
+    # Lock department row
+    dept_rows = db.execute(
+        "SELECT id, budget FROM departments WHERE id = %(did)s FOR UPDATE",
+        {"did": dept_id}
+    )
+    if not dept_rows:
+        db.rollback()
+        return False
+
+    # Current approved total for the department
+    total_rows = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) "
+        "FROM expenses "
+        "WHERE department_id = %(did)s AND status = 'approved'",
+        {"did": dept_id}
+    )
+    approved_total = total_rows[0][0]
+
+    if approved_total > new_budget:
+        db.rollback()
+        return False
+
+    db.execute(
+        "UPDATE departments SET budget = %(budget)s WHERE id = %(did)s",
+        {"budget": new_budget, "did": dept_id}
+    )
+    db.commit()
+    return True
+```

@@ -1,0 +1,9 @@
+solo check: other departments' approvals do not count
+call: approve_expense(db, expense_id=2)
+schedule choices: []
+step 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 2   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' AND (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = expenses.department_id AND status = 'approved') + expenses.amount <= (SELECT budget FROM departments WHERE id = expenses.department_id) RETURNING id -> UPDATE 0 []
+step 3   R1  ROLLBACK -> ROLLBACK
+         R1  returned False
+invariant ok: no department's approved total exceeds its budget
+INVARIANT VIOLATED: expected state: SELECT status = 'approved' FROM expenses WHERE id = 2  (got [(False,)])

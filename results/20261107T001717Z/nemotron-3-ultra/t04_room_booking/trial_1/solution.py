@@ -1,0 +1,39 @@
+import psycopg.errors
+from datetime import datetime
+
+def migrate(db) -> None:
+    # Enable btree_gist for the exclusion constraint (allows "=" on integer in GiST)
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # Add exclusion constraint to prevent overlapping bookings for the same room.
+    # Uses a DO block to avoid error if constraint already exists.
+    db.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'no_overlapping_bookings'
+            ) THEN
+                ALTER TABLE bookings
+                ADD CONSTRAINT no_overlapping_bookings
+                EXCLUDE USING gist (
+                    room_id WITH =,
+                    tsrange(starts_at, ends_at) WITH &&
+                );
+            END IF;
+        END
+        $$;
+    """)
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    """
+    Attempts to book a room for the given time interval.
+    Returns True if the booking was inserted, False if an overlapping booking exists.
+    """
+    try:
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%(room_id)s, %(starts_at)s, %(ends_at)s)",
+            {"room_id": room_id, "starts_at": starts_at, "ends_at": ends_at}
+        )
+        return True
+    except psycopg.errors.ExclusionViolation:
+        # The exclusion constraint guarantees no overlapping bookings for the same room.
+        return False

@@ -1,0 +1,35 @@
+```python
+from psycopg.errors import SerializationFailure, DeadlockDetected
+
+def approve_expense(db, expense_id: int) -> bool:
+    max_attempts = 5
+    for _ in range(max_attempts):
+        db.begin(isolation="serializable")
+        try:
+            sql = """
+                UPDATE expenses
+                SET status = 'approved'
+                WHERE id = %(expense_id)s
+                  AND status = 'pending'
+                  AND (SELECT COALESCE(SUM(amount), 0) FROM expenses
+                         WHERE department_id = expenses.department_id
+                           AND status = 'approved') + expenses.amount
+                     <= (SELECT budget FROM departments
+                         WHERE id = expenses.department_id)
+                RETURNING id
+            """
+            rows = db.execute(sql, {"expense_id": expense_id})
+            if rows:
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except (SerializationFailure, DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+```

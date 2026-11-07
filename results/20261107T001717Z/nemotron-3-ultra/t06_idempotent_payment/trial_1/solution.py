@@ -1,0 +1,45 @@
+import psycopg.errors
+
+def migrate(db) -> None:
+    # Add a unique constraint on idempotency_key to enforce rule #1 at the database level.
+    db.execute(
+        "ALTER TABLE payments ADD CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key)"
+    )
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    """
+    Creates a payment with the given idempotency key, or returns the existing one.
+    Guarantees:
+      1. No two payments share the same idempotency_key.
+      2. Every call returns the id of the payment for that key, even under heavy concurrency.
+    """
+    while True:
+        try:
+            db.begin()
+            rows = db.execute(
+                "INSERT INTO payments (idempotency_key, customer_id, amount) "
+                "VALUES (%s, %s, %s) RETURNING id",
+                (idempotency_key, customer_id, amount)
+            )
+            db.commit()
+            return rows[0][0]
+        except psycopg.errors.UniqueViolation:
+            # Another transaction already committed a payment with this key.
+            db.rollback()
+            break
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            # Transient error – retry the whole operation.
+            db.rollback()
+            continue
+        except Exception:
+            # Any other error – roll back and retry (bounded by the 60-call limit).
+            db.rollback()
+            continue
+
+    # If we got a UniqueViolation, the payment already exists. Fetch its id.
+    rows = db.execute(
+        "SELECT id FROM payments WHERE idempotency_key = %s",
+        (idempotency_key,)
+    )
+    # The unique constraint guarantees a row exists.
+    return rows[0][0]

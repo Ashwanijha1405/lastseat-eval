@@ -4,7 +4,7 @@
     "config": "config/models.free.yaml",
     "models": [
       "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "google/gemma-4-31b-it:free"
+      "cohere/north-mini-code:free"
     ],
     "tasks": [
       "t01_flash_sale",
@@ -19,7 +19,7 @@
     "dry_run": false
   },
   "started_utc": "2026-11-06T12:38:21+00:00",
-  "git_commit": "60f8d7fb8ffb788507de6dacc87b68f88cd02bd0",
+  "git_commit": "47beef49fed4bd9feb9323a79d78fbb010e0ebaf",
   "dry_run": false,
   "trials": 1,
   "config": "config/models.free.yaml",
@@ -44,8 +44,8 @@
       "id": "nvidia/nemotron-3-ultra-550b-a55b:free"
     },
     {
-      "slug": "gemma-4-31b",
-      "id": "google/gemma-4-31b-it:free"
+      "slug": "north-mini-code",
+      "id": "cohere/north-mini-code:free"
     }
   ],
   "settings_sent": {
@@ -67,7 +67,7 @@
       0.0,
       0.0
     ],
-    "google/gemma-4-31b-it:free": [
+    "cohere/north-mini-code:free": [
       0.0,
       0.0
     ]
@@ -82,7 +82,7 @@
   },
   "grading_jobs": 2,
   "budget_limit_usd": 0.0,
-  "complete": false,
+  "complete": true,
   "sessions": [
     {
       "started_utc": "2026-11-06T12:38:21+00:00",
@@ -110,9 +110,17 @@
         "gemma-4-31b/t01_flash_sale/trial_1: rate_limited: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
       ],
       "finished_utc": "2026-11-06T17:07:41+00:00"
+    },
+    {
+      "started_utc": "2026-11-07T00:41:26+00:00",
+      "git_commit": "47beef49fed4bd9feb9323a79d78fbb010e0ebaf",
+      "api_calls": 7,
+      "stopped_reason": null,
+      "api_failures": [],
+      "finished_utc": "2026-11-07T00:59:46+00:00"
     }
   ],
   "spent_usd": 0.0,
-  "api_calls": 7,
-  "stopped_reason": "rate_limited at gemma-4-31b/t01_flash_sale/trial_1: HTTP 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok\",\"provider_name\":\"Google AI Studio\",\"i"
+  "api_calls": 14,
+  "stopped_reason": null
 }

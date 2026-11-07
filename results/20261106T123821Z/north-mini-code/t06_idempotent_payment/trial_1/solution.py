@@ -1,0 +1,40 @@
+import psycopg.errors
+
+MAX_ATTEMPTS = 5  # safe retry count for transient conflicts
+
+def migrate(db):
+    """Add a unique constraint on idempotency_key if not present."""
+    db.begin()
+    db.execute(
+        "ALTER TABLE payments "
+        "ADD CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key);"
+    )
+    db.commit()
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    sql = """
+    INSERT INTO payments (idempotency_key, customer_id, amount)
+    VALUES (%(idempotency_key)s, %(customer_id)s, %(amount)s)
+    ON CONFLICT (idempotency_key) DO UPDATE SET
+        customer_id = EXCLUDED.customer_id,
+        amount   = EXCLUDED.amount
+    RETURNING id;
+    """
+    params = {
+        "idempotency_key": idempotency_key,
+        "customer_id": customer_id,
+        "amount": amount,
+    }
+
+    for _ in range(MAX_ATTEMPTS):
+        db.begin()
+        try:
+            rows = db.execute(sql, params)
+            db.commit()
+            return rows[0][0]
+        except psycopg.errors.Error:
+            db.rollback()
+
+    # The code below is unreachable under normal operation; it is kept only to satisfy
+    # the static requirement that a function must always return.
+    raise RuntimeError("create_payment failed after retries")

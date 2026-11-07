@@ -1,0 +1,36 @@
+```python
+import psycopg.errors
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    """
+    Transfer `amount` from `from_id` to `to_id`.
+    Returns True if the sender had sufficient balance, False otherwise.
+    """
+    db.begin()
+    try:
+        # Lock both accounts in a consistent order (by id) to avoid deadlocks.
+        rows = db.execute(
+            "SELECT id, balance FROM accounts WHERE id IN (%s, %s) ORDER BY id FOR UPDATE",
+            (from_id, to_id)
+        )
+        balances = {row[0]: row[1] for row in rows}
+
+        if balances[from_id] < amount:
+            db.rollback()
+            return False
+
+        db.execute(
+            "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+            (amount, from_id)
+        )
+        db.execute(
+            "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+            (amount, to_id)
+        )
+
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+```

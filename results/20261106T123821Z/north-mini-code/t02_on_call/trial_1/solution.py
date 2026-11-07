@@ -1,0 +1,54 @@
+def migrate(db):
+    db.begin()
+    db.execute("""
+        CREATE TABLE shift_status (
+            shift_id int PRIMARY KEY,
+            on_call_count int NOT NULL
+        )
+    """)
+    db.execute("""
+        INSERT INTO shift_status (shift_id, on_call_count)
+        SELECT shift_id, COUNT(*)
+        FROM doctors
+        WHERE on_call = true
+        GROUP BY shift_id
+    """)
+    db.commit()
+
+def go_off_call(db, doctor_id: int) -> bool:
+    db.begin()
+    # Retrieve the shift of the doctor
+    cur = db.execute("SELECT shift_id FROM doctors WHERE id = %s", (doctor_id,))
+    if not cur:
+        return False
+    shift_id = cur[0][0]
+
+    # Lock the shift_status row to serialize per‑shift updates
+    status_cur = db.execute(
+        "SELECT on_call_count FROM shift_status WHERE shift_id = %s FOR UPDATE",
+        (shift_id,)
+    )
+    if not status_cur:
+        return False
+    count = status_cur[0][0]
+
+    if count == 1:
+        # Only one doctor on call – cannot turn off
+        return False
+    else:
+        # Turn the doctor off call
+        db.execute("UPDATE doctors SET on_call = false WHERE id = %s", (doctor_id,))
+        # Decrease the counter
+        db.execute(
+            "UPDATE shift_status SET on_call_count = on_call_count -  but only one doctor on call – cannot turn off
+        return False
+    else:
+        # Turn the doctor off call
+        db.execute("UPDATE doctors SET on_call = false WHERE id = %s", (doctor_id,))
+        # Decrease the counter
+        db.execute(
+            "UPDATE shift_status SET on_call_count = on_call_count - 1 WHERE shift_id = %s",
+            (shift_id,)
+        )
+        db.commit()
+        return True

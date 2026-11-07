@@ -1,0 +1,132 @@
+{
+  "task_id": "t03_expense_budget",
+  "solution": "/app/results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "approval within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval within budget succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 40, 100, 30)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval reaching the budget exactly succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval reaching the budget exactly succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 70, 100, 30)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval over budget is refused cleanly\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 71, 100, 30)]\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses\n"
+    },
+    {
+      "name": "an expense that is not pending is refused",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: an expense that is not pending is refused\ncall: approve_expense(db, expense_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 1 FOR UPDATE OF d -> [(1, 10, 100, 0)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 AND status = 'pending' RETURNING id -> UPDATE 0 []\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'rejected' FROM expenses WHERE id = 1\n"
+    },
+    {
+      "name": "other departments' approvals do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: other departments' approvals do not count\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 60, 100, 0)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'approved' FROM expenses WHERE id = 2\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "nothing approved yet, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 24,
+      "dfs_schedules": 24,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 14,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: nothing approved yet, two approvals that do not both fit\nR1: approve_expense(db, expense_id=1)\nR2: approve_expense(db, expense_id=2)\nschedule choices: [0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 1 FOR UPDATE OF d -> [(1, 60, 100, 0)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 AND status = 'pending' RETURNING id -> UPDATE 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> blocked (waiting for R1)\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 5 resumed -> [(1, 50, 100, 0)]\nstep 7   R2  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 1.11
+    },
+    {
+      "name": "one already approved, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 24,
+      "dfs_schedules": 24,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 14,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: one already approved, two approvals that do not both fit\nR1: approve_expense(db, expense_id=2)\nR2: approve_expense(db, expense_id=3)\nschedule choices: [0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 40, 100, 30)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 3 FOR UPDATE OF d -> blocked (waiting for R1)\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 5 resumed -> [(1, 50, 100, 30)]\nstep 7   R2  UPDATE expenses SET status = 'approved' WHERE id = 3 AND status = 'pending' RETURNING id -> UPDATE 1 [(3,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 1.03
+    },
+    {
+      "name": "two approvals that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 24,
+      "dfs_schedules": 24,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.67
+    },
+    {
+      "name": "approvals in two different departments",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 70,
+      "dfs_schedules": 70,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.77
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 0.5
+  },
+  "safety_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 4.87,
+  "failure_category": "concurrency",
+  "api": {
+    "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "provider": "Nvidia",
+    "finish_reason": "stop",
+    "prompt_tokens": 1225,
+    "completion_tokens": 15913,
+    "cost_usd": 0.0,
+    "seconds": 191.81,
+    "attempts": 1
+  }
+}

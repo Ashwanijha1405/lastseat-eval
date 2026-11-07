@@ -27,5 +27,5 @@ settings:
 models:
   - slug: nemotron-3-ultra
     id: nvidia/nemotron-3-ultra-550b-a55b:free
-  - slug: gemma-4-31b
-    id: google/gemma-4-31b-it:free
+  - slug: north-mini-code
+    id: cohere/north-mini-code:free

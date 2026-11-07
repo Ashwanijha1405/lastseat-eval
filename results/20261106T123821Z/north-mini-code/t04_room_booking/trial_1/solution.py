@@ -1,0 +1,35 @@
+import psycopg.errors
+from psycopg.errors import ExclusionViolation, DuplicateObject
+from datetime import datetime
+
+def migrate(db) -> None:
+    """
+    Adds an exclusion constraint to the bookings table to prevent overlapping
+    bookings for the same room. If the constraint already exists, it is ignored.
+    """
+    try:
+        db.execute("""
+            ALTER TABLE bookings
+            ADD CONSTRAINT bookings_room_excl
+            EXCLUDE USING GIST (room_id WITH =, tstzrange(starts_at, ends_at) WITH &&);
+        """)
+    except DuplicateObject:
+        # Constraint already present – nothing to do.
+        pass
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    """
+    Attempts to book a meeting room for the given interval.
+    Returns True if the booking is successfully inserted, False otherwise.
+    """
+    try:
+        db.begin()
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at)
+        )
+        db.commit()
+        return True
+    except ExclusionViolation:
+        db.rollback()
+        return False

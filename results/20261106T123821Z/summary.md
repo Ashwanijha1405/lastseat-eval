@@ -1,17 +1,17 @@
 # Run 20261106T123821Z (free, 1 trial(s))
 
-| task | nemotron-3-ultra | gemma-4-31b |
+| task | nemotron-3-ultra | north-mini-code |
 |---|---|---|
-| t01_flash_sale | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing (api error) |
-| t02_on_call | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing |
-| t03_expense_budget | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing |
-| t04_room_booking | FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00) | missing |
-| t05_wallet_transfer | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing |
-| t06_idempotent_payment | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing |
-| t07_node_drain | FAIL [spec] (vacuous_safety) 0.00 (sa 0.00 / so 0.00 / li 0.00) | missing |
+| t01_flash_sale | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) |
+| t02_on_call | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | FAIL [load] (syntax_error) 0.00 (sa 0.00 / so 0.00 / li 0.00) |
+| t03_expense_budget | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | FAIL [spec] 0.50 (sa 0.50 / so 0.00 / li 0.00) |
+| t04_room_booking | FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00) | FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00) |
+| t05_wallet_transfer | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) |
+| t06_idempotent_payment | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) |
+| t07_node_drain | FAIL [spec] (vacuous_safety) 0.00 (sa 0.00 / so 0.00 / li 0.00) | FAIL [spec] (vacuous_safety) 0.00 (sa 0.00 / so 0.00 / li 0.00) |
 
 - nemotron-3-ultra: 5/7 passed, mean score 0.714; failures: load 1, spec 1
-- gemma-4-31b: 0/7 passed, mean score 0.000; failures: none
+- north-mini-code: 3/7 passed, mean score 0.500; failures: load 2, spec 2
 
 Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe schedule; **harness** = the grader failed.
 
@@ -37,6 +37,36 @@ HINT:  No function matches the given name and argument type`
 - counterexample: `results/20261106T123821Z/nemotron-3-ultra/t07_node_drain/trial_1/counterexample_2.txt`
 - counterexample: `results/20261106T123821Z/nemotron-3-ultra/t07_node_drain/trial_1/counterexample_3.txt`
 
+### north-mini-code / t02_on_call / trial_1: load
+- status `load_error`, load_error `syntax_error`, safety_reason `None`, finish_reason `stop`, completion_tokens 17303
+- load_detail: `line 43: unterminated string literal (detected at line 43)`
+
+### north-mini-code / t03_expense_budget / trial_1: spec
+- status `graded`, load_error `None`, safety_reason `None`, finish_reason `stop`, completion_tokens 20011
+- solo FAIL: other departments' approvals do not count: returned False, expected True; violated: expected state: SELECT status = 'approved' FROM expenses WHERE id = 2 (got [(False,)])
+- scenario `approvals in two different departments`: status ok, safe=True (0 unsafe), live=False (20 unlive) of 20 schedules, exhaustive=True, reproduced=True
+- counterexample: `results/20261106T123821Z/north-mini-code/t03_expense_budget/trial_1/counterexample_1.txt`
+- counterexample: `results/20261106T123821Z/north-mini-code/t03_expense_budget/trial_1/counterexample_2.txt`
+- counterexample: `results/20261106T123821Z/north-mini-code/t03_expense_budget/trial_1/counterexample_3.txt`
+
+### north-mini-code / t04_room_booking / trial_1: load
+- status `load_error`, load_error `migrate_error`, safety_reason `None`, finish_reason `stop`, completion_tokens 10722
+- load_detail: `UndefinedObject: data type integer has no default operator class for access method "gist"
+HINT:  You must specify an operator class for the index or define a default operator class for the data type.`
+
+### north-mini-code / t07_node_drain / trial_1: spec
+- status `graded`, load_error `None`, safety_reason `vacuous_safety`, finish_reason `stop`, completion_tokens 26961
+- solo FAIL: drain succeeds when every shard keeps a replica: raised RuntimeError: Failed to drain node after retries; violated: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
+ (got [(False,)])
+- solo FAIL: drain is refused if any shard would lose its last replica, and nothing changes: raised RuntimeError: Failed to drain node after retries
+- solo FAIL: shards without an active replica on the node do not block it: raised RuntimeError: Failed to drain node after retries; violated: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
+ (got [(False,)])
+- scenario `two drains of nodes sharing several shards, both fit`: status ok, safe=True (0 unsafe), live=False (2200 unlive) of 2200 schedules, exhaustive=False, reproduced=True
+- scenario `two drains of nodes with no shared shard`: status ok, safe=True (0 unsafe), live=False (2200 unlive) of 2200 schedules, exhaustive=False, reproduced=True
+- counterexample: `results/20261106T123821Z/north-mini-code/t07_node_drain/trial_1/counterexample_1.txt`
+- counterexample: `results/20261106T123821Z/north-mini-code/t07_node_drain/trial_1/counterexample_2.txt`
+- counterexample: `results/20261106T123821Z/north-mini-code/t07_node_drain/trial_1/counterexample_3.txt`
+
 ## API
 
 | model | task | trial | tokens out | seconds | attempts | finish | provider |
@@ -48,12 +78,12 @@ HINT:  No function matches the given name and argument type`
 | nemotron-3-ultra | t05_wallet_transfer | trial_1 | 25360 | 926.71 | 1 | stop | Nvidia |
 | nemotron-3-ultra | t06_idempotent_payment | trial_1 | 4338 | 231.46 | 1 | stop | Nvidia |
 | nemotron-3-ultra | t07_node_drain | trial_1 | 9467 | 400.48 | 1 | stop | Nvidia |
-| gemma-4-31b | t01_flash_sale | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t02_on_call | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t03_expense_budget | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t04_room_booking | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t05_wallet_transfer | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t06_idempotent_payment | trial_1 | None | None | None | None | None |
-| gemma-4-31b | t07_node_drain | trial_1 | None | None | None | None | None |
+| north-mini-code | t01_flash_sale | trial_1 | 14980 | 79.92 | 1 | stop | Cohere |
+| north-mini-code | t02_on_call | trial_1 | 17303 | 103.71 | 1 | stop | Cohere |
+| north-mini-code | t03_expense_budget | trial_1 | 20011 | 158.14 | 1 | stop | Cohere |
+| north-mini-code | t04_room_booking | trial_1 | 10722 | 69.61 | 1 | stop | Cohere |
+| north-mini-code | t05_wallet_transfer | trial_1 | 12518 | 93.95 | 1 | stop | Cohere |
+| north-mini-code | t06_idempotent_payment | trial_1 | 14579 | 84.12 | 1 | stop | Cohere |
+| north-mini-code | t07_node_drain | trial_1 | 26961 | 129.24 | 1 | stop | Cohere |
 
-spent_usd: 0.0, api_calls: 7, sessions: 3, complete: False
+spent_usd: 0.0, api_calls: 14, sessions: 4, complete: True
