@@ -1,0 +1,115 @@
+```python
+from datetime import datetime
+import psycopg.errors
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    try:
+        db.begin()
+        # Serialize all operations on the same room
+        db.execute("SELECT pg_advisory_xact_lock(%s)", (room_id,))
+
+        # Check for overlapping bookings
+        rows = db.execute(
+            "SELECT 1 FROM bookings WHERE room_id = %s AND starts_at < %s AND ends_at > %s",
+            (room_id, ends_at, starts_at)
+        )
+        if rows:
+            db.rollback()
+            return False
+
+        # Check per-day limit (UTC calendar day of starts_at)
+        rows = db.execute(
+            "SELECT COUNT(*) FROM bookings "
+            "WHERE room_id = %s AND (starts_at AT TIME ZONE 'UTC')::date = (%s AT TIME ZONE 'UTC')::date",
+            (room_id, starts_at)
+        )
+        if rows[0][0] >= 3:
+            db.rollback()
+            return False
+
+        # Insert the new booking
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at)
+        )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    try:
+        db.begin()
+        # Find the room of the booking
+        rows = db.execute("SELECT room_id FROM bookings WHERE id = %s", (booking_id,))
+        if not rows:
+            db.rollback()
+            return False
+        room_id = rows[0][0]
+
+        # Serialize on that room
+        db.execute("SELECT pg_advisory_xact_lock(%s)", (room_id,))
+
+        # Re-check existence after acquiring the lock
+        rows = db.execute("SELECT 1 FROM bookings WHERE id = %s", (booking_id,))
+        if not rows:
+            db.rollback()
+            return False
+
+        # Check overlap with *other* bookings
+        rows = db.execute(
+            "SELECT 1 FROM bookings "
+            "WHERE room_id = %s AND id != %s AND starts_at < %s AND ends_at > %s",
+            (room_id, booking_id, new_ends_at, new_starts_at)
+        )
+        if rows:
+            db.rollback()
+            return False
+
+        # Check per-day limit on the new day (excluding this booking)
+        rows = db.execute(
+            "SELECT COUNT(*) FROM bookings "
+            "WHERE room_id = %s AND (starts_at AT TIME ZONE 'UTC')::date = (%s AT TIME ZONE 'UTC')::date AND id != %s",
+            (room_id, new_starts_at, booking_id)
+        )
+        if rows[0][0] >= 3:
+            db.rollback()
+            return False
+
+        # Update the booking
+        db.execute(
+            "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+            (new_starts_at, new_ends_at, booking_id)
+        )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def cancel(db, booking_id: int) -> bool:
+    try:
+        db.begin()
+        rows = db.execute("SELECT room_id FROM bookings WHERE id = %s", (booking_id,))
+        if not rows:
+            db.rollback()
+            return False
+        room_id = rows[0][0]
+
+        db.execute("SELECT pg_advisory_xact_lock(%s)", (room_id,))
+
+        rows = db.execute("SELECT 1 FROM bookings WHERE id = %s", (booking_id,))
+        if not rows:
+            db.rollback()
+            return False
+
+        db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+```

@@ -1,0 +1,74 @@
+```python
+import psycopg.errors
+
+def migrate(db) -> None:
+    # Partial index to speed up the sum of approved expenses per department
+    db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_expenses_dept_approved
+        ON expenses (department_id)
+        WHERE status = 'approved'
+    """)
+
+def approve_expense(db, expense_id: int) -> bool:
+    # A bounded retry loop for transient errors (deadlock, serialization failure)
+    max_attempts = 5
+    for _ in range(max_attempts):
+        try:
+            db.begin("read committed")
+
+            # Lock the expense row first
+            rows = db.execute(
+                "SELECT department_id, amount, status FROM expenses WHERE id = %s FOR UPDATE",
+                (expense_id,)
+            )
+            if not rows:
+                db.rollback()
+                return False
+            dept_id, amount, status = rows[0]
+
+            # Expense must be pending
+            if status != 'pending':
+                db.rollback()
+                return False
+
+            # Lock the department row to serialize approvals for the same department
+            rows = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,)
+            )
+            budget = rows[0][0]
+
+            # Current sum of approved expenses in this department
+            rows = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,)
+            )
+            current_sum = rows[0][0]
+
+            # Budget check
+            if current_sum + amount > budget:
+                db.rollback()
+                return False
+
+            # Approve the expense
+            db.execute(
+                "UPDATE expenses SET status = 'approved' WHERE id = %s",
+                (expense_id,)
+            )
+
+            db.commit()
+            return True
+
+        except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure):
+            # Transient error – roll back and retry
+            db.rollback()
+            continue
+        except Exception:
+            # Any other error: roll back and propagate
+            db.rollback()
+            raise
+
+    # Should never be reached with the locking order used, but return False if retries exhausted
+    return False
+```

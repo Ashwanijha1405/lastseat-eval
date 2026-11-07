@@ -1,0 +1,22 @@
+def migrate(db) -> None:
+    # Ensure a unique constraint exists on idempotency_key so that
+    # INSERT ... ON CONFLICT can be used.
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_unique "
+        "ON payments (idempotency_key)"
+    )
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    # Single atomic statement: insert if key is new, otherwise update the existing
+    # row with a no-op (keeps the same customer_id) and return its id.
+    rows = db.execute(
+        """
+        INSERT INTO payments (idempotency_key, customer_id, amount)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (idempotency_key) DO UPDATE SET customer_id = payments.customer_id
+        RETURNING id
+        """,
+        (idempotency_key, customer_id, amount)
+    )
+    return rows[0][0]

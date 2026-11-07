@@ -1,0 +1,34 @@
+{
+  "task_id": "t10_room_rules_scaled",
+  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_1/solution.py",
+  "status": "load_error",
+  "load_error": "migrate_error",
+  "load_detail": "UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist\nLINE 6:             tsrange(starts_at, ends_at) WITH &&\n                    ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.06,
+  "warnings": [],
+  "failure_category": "load",
+  "api": {
+    "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "provider": "Nvidia",
+    "finish_reason": "stop",
+    "prompt_tokens": 1602,
+    "completion_tokens": 12097,
+    "cost_usd": 0.0,
+    "seconds": 192.12,
+    "attempts": 1
+  }
+}

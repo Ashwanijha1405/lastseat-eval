@@ -1,0 +1,27 @@
+import psycopg.errors
+
+def migrate(db) -> None:
+    # Create a unique index on idempotency_key to enforce the one-payment-per-key rule.
+    # IF NOT EXISTS makes the migration idempotent.
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_unique "
+        "ON payments (idempotency_key)"
+    )
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    # Insert the payment; if the idempotency_key already exists, do a no-op update
+    # and return the existing row's id. The unique index guarantees at most one row per key.
+    sql = """
+        INSERT INTO payments (idempotency_key, customer_id, amount)
+        VALUES (%(key)s, %(customer_id)s, %(amount)s)
+        ON CONFLICT (idempotency_key) DO UPDATE
+            SET idempotency_key = EXCLUDED.idempotency_key
+        RETURNING id
+    """
+    rows = db.execute(sql, {
+        "key": idempotency_key,
+        "customer_id": customer_id,
+        "amount": amount,
+    })
+    # The INSERT ... RETURNING always returns exactly one row.
+    return rows[0][0]

@@ -1,0 +1,54 @@
+import psycopg.errors
+
+def go_off_call(db, doctor_id: int) -> bool:
+    """
+    Allow a doctor to go off call if at least one other doctor in the same shift
+    remains on call. Returns True on success, False if the doctor is the only
+    one on call in their shift.
+    """
+    # The doctor's shift_id never changes (only on_call can change), so we can
+    # read it once outside the transaction.
+    rows = db.execute("SELECT shift_id FROM doctors WHERE id = %s", (doctor_id,))
+    if not rows:
+        return False  # should not happen per specification
+    shift_id = rows[0][0]
+
+    # Retry a few times in case of deadlock or serialization failure.
+    max_retries = 3
+    for _ in range(max_retries):
+        try:
+            db.begin()
+            # Serialize all go_off_call requests for the same shift by locking
+            # the shift row. This guarantees the invariant and allows the
+            # maximum possible concurrency (up to N-1 doctors can go off call
+            # when N are on call).
+            db.execute("SELECT 1 FROM shifts WHERE id = %s FOR UPDATE", (shift_id,))
+
+            rows = db.execute(
+                "SELECT count(*) FROM doctors WHERE shift_id = %s AND on_call = true",
+                (shift_id,),
+            )
+            on_call_count = rows[0][0]
+
+            if on_call_count > 1:
+                db.execute(
+                    "UPDATE doctors SET on_call = false WHERE id = %s",
+                    (doctor_id,),
+                )
+                db.commit()
+                return True
+            else:
+                db.commit()
+                return False
+
+        except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure):
+            db.rollback()
+            # Retry the whole transaction.
+            continue
+        except Exception:
+            db.rollback()
+            raise
+
+    # If we exhaust retries (extremely unlikely), raise an error.
+    # The test environment expects valid requests to succeed, so this should not happen.
+    raise RuntimeError("Maximum retries exceeded due to concurrent conflicts")

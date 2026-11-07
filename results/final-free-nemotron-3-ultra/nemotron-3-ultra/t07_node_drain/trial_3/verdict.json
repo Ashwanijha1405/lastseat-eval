@@ -1,0 +1,115 @@
+{
+  "task_id": "t07_node_drain",
+  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "drain succeeds when every shard keeps a replica",
+      "passed": false,
+      "reason": "raised SyntaxError (42601): syntax error at or near \"ORDER\"; violated: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n (got [(False,)])",
+      "trace": "solo check: drain succeeds when every shard keeps a replica\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nINVARIANT VIOLATED: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n  (got [(False,)])\n"
+    },
+    {
+      "name": "drain is refused if any shard would lose its last replica, and nothing changes",
+      "passed": false,
+      "reason": "raised SyntaxError (42601): syntax error at or near \"ORDER\"",
+      "trace": "solo check: drain is refused if any shard would lose its last replica, and nothing changes\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\ninvariant ok: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{t,t,t,f}' FROM replicas\n\n"
+    },
+    {
+      "name": "shards without an active replica on the node do not block it",
+      "passed": false,
+      "reason": "raised SyntaxError (42601): syntax error at or near \"ORDER\"; violated: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n (got [(False,)])",
+      "trace": "solo check: shards without an active replica on the node do not block it\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nINVARIANT VIOLATED: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n  (got [(False,)])\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two drains that would together orphan a shard",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 20,
+      "dfs_schedules": 20,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.56,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two drains of nodes sharing several shards, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 20,
+      "dfs_schedules": 20,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": false,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 20,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two drains of nodes sharing several shards, both fit\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 5   R2  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 1.21,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two drains of nodes with no shared shard",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 20,
+      "dfs_schedules": 20,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": false,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 20,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two drains of nodes with no shared shard\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 5   R2  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 1.3,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": "vacuous_safety",
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 3.31,
+  "warnings": [],
+  "failure_category": "spec",
+  "api": {
+    "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "provider": "Nvidia",
+    "finish_reason": "stop",
+    "prompt_tokens": 1215,
+    "completion_tokens": 11491,
+    "cost_usd": 0.0,
+    "seconds": 182.17,
+    "attempts": 1
+  }
+}

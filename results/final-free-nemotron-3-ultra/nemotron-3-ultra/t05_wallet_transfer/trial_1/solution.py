@@ -1,0 +1,49 @@
+import psycopg.errors
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    """
+    Transfer `amount` from `from_id` to `to_id`.
+    Returns True if successful, False if insufficient funds.
+    Uses receiver‑first locking (to_id then from_id) to avoid false failures
+    and retries on deadlock.
+    """
+    max_attempts = 10
+    for _ in range(max_attempts):
+        try:
+            db.begin()  # default isolation: read committed
+            # Lock receiver (to_id) first, then sender (from_id).
+            rows = db.execute(
+                "SELECT id, balance FROM accounts WHERE id IN (%s, %s) "
+                "ORDER BY CASE WHEN id = %s THEN 0 ELSE 1 END FOR UPDATE",
+                (to_id, from_id, to_id)
+            )
+            if len(rows) != 2:
+                db.rollback()
+                return False
+            balances = {row[0]: row[1] for row in rows}
+            sender_balance = balances[from_id]
+            if sender_balance >= amount:
+                db.execute(
+                    "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                    (amount, from_id)
+                )
+                db.execute(
+                    "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                    (amount, to_id)
+                )
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    raise RuntimeError("Transfer failed after multiple retries due to deadlocks")
+
+def migrate(db) -> None:
+    # No schema changes required for this solution.
+    pass

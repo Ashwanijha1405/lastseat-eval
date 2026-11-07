@@ -1,0 +1,10 @@
+solo check: drain succeeds when every shard keeps a replica
+call: drain_node(db, node_id='A')
+schedule choices: []
+step 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near "ORDER"
+step 3   R1  ROLLBACK -> ROLLBACK
+         R1  raised SyntaxError (42601): syntax error at or near "ORDER"
+invariant ok: every shard has at least one active replica
+INVARIANT VIOLATED: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
+  (got [(False,)])

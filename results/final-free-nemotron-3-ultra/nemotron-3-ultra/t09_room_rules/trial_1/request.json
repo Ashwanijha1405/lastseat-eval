@@ -1,0 +1,24 @@
+{
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "messages": [
+    {
+      "role": "user",
+      "content": "<prompt.txt>"
+    }
+  ],
+  "usage": {
+    "include": true
+  },
+  "max_tokens": 32000,
+  "reasoning": {
+    "effort": "high"
+  },
+  "provider": {
+    "max_price": {
+      "prompt": 0,
+      "completion": 0,
+      "request": 0,
+      "image": 0
+    }
+  }
+}

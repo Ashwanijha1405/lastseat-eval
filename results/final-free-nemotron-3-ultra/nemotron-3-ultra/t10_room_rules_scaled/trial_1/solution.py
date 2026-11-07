@@ -1,0 +1,234 @@
+import psycopg.errors
+from datetime import datetime, timezone
+
+# ------------------------------------------------------------
+# Schema migration
+# ------------------------------------------------------------
+def migrate(db) -> None:
+    """Create the exclusion constraint for non‑overlapping bookings and a
+    room_day_counts table to enforce the per‑day limit of 3 bookings."""
+    # GiST index support for exclusion constraints
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+
+    # Prevent overlapping bookings for the same room.
+    # tsrange defaults to '[)' (lower inclusive, upper exclusive) which matches
+    # the half‑open interval [starts_at, ends_at) used in the specification.
+    db.execute("""
+        ALTER TABLE bookings
+        ADD CONSTRAINT bookings_no_overlap
+        EXCLUDE USING gist (
+            room_id WITH =,
+            tsrange(starts_at, ends_at) WITH &&
+        )
+    """)
+
+    # Table that stores the number of bookings per room per UTC day.
+    db.execute("""
+        CREATE TABLE room_day_counts (
+            room_id int NOT NULL,
+            day     date NOT NULL,
+            count   int NOT NULL DEFAULT 0,
+            PRIMARY KEY (room_id, day)
+        )
+    """)
+
+    # Populate the counts from existing bookings.
+    db.execute("""
+        INSERT INTO room_day_counts (room_id, day, count)
+        SELECT room_id, starts_at::date, count(*)
+        FROM bookings
+        GROUP BY room_id, starts_at::date
+    """)
+
+
+# ------------------------------------------------------------
+# Helper: UTC date of a timezone‑aware datetime
+# ------------------------------------------------------------
+def _utc_day(dt: datetime) -> datetime.date:
+    return dt.astimezone(timezone.utc).date()
+
+
+# ------------------------------------------------------------
+# Booking operations
+# ------------------------------------------------------------
+_MAX_RETRIES = 3
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    """Insert a new booking if it does not overlap any existing booking
+    and the room has fewer than 3 bookings on that UTC day."""
+    day = _utc_day(starts_at)
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            db.begin(isolation="read committed")
+
+            # Ensure the counter row exists.
+            db.execute(
+                "INSERT INTO room_day_counts (room_id, day, count) VALUES (%s, %s, 0) "
+                "ON CONFLICT (room_id, day) DO NOTHING",
+                (room_id, day)
+            )
+
+            # Lock the counter row and read the current count.
+            rows = db.execute(
+                "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+                (room_id, day)
+            )
+            count = rows[0][0] if rows else 0
+            if count >= 3:
+                db.rollback()
+                return False
+
+            # Insert the booking – the exclusion constraint will reject overlaps.
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at)
+            )
+
+            # Increment the daily counter.
+            db.execute(
+                "UPDATE room_day_counts SET count = count + 1 WHERE room_id = %s AND day = %s",
+                (room_id, day)
+            )
+
+            db.commit()
+            return True
+
+        except psycopg.errors.ExclusionViolation:
+            db.rollback()
+            return False
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            if attempt == _MAX_RETRIES - 1:
+                return False
+        except Exception:
+            db.rollback()
+            return False
+
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    """Move an existing booking to a new time slot on the same or a different day."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            db.begin(isolation="read committed")
+
+            # Lock the booking row.
+            rows = db.execute(
+                "SELECT room_id, starts_at, ends_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,)
+            )
+            if not rows:
+                db.rollback()
+                return False
+
+            room_id, old_starts_at, _ = rows[0]
+            old_day = _utc_day(old_starts_at)
+            new_day = _utc_day(new_starts_at)
+
+            # If the day changes we must lock both day‑counter rows (in a fixed order)
+            # and verify the new day would not exceed the limit.
+            if old_day != new_day:
+                # Lock order: earlier day first to avoid deadlocks.
+                days = [old_day, new_day] if old_day < new_day else [new_day, old_day]
+                counts = {}
+                for day in days:
+                    db.execute(
+                        "INSERT INTO room_day_counts (room_id, day, count) VALUES (%s, %s, 0) "
+                        "ON CONFLICT (room_id, day) DO NOTHING",
+                        (room_id, day)
+                    )
+                    rows = db.execute(
+                        "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+                        (room_id, day)
+                    )
+                    counts[day] = rows[0][0] if rows else 0
+
+                if counts[new_day] >= 3:
+                    db.rollback()
+                    return False
+
+            # Update the booking – the exclusion constraint checks overlaps with other bookings.
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id)
+            )
+
+            # Adjust daily counters if the day changed.
+            if old_day != new_day:
+                db.execute(
+                    "UPDATE room_day_counts SET count = count - 1 WHERE room_id = %s AND day = %s",
+                    (room_id, old_day)
+                )
+                db.execute(
+                    "UPDATE room_day_counts SET count = count + 1 WHERE room_id = %s AND day = %s",
+                    (room_id, new_day)
+                )
+
+            db.commit()
+            return True
+
+        except psycopg.errors.ExclusionViolation:
+            db.rollback()
+            return False
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            if attempt == _MAX_RETRIES - 1:
+                return False
+        except Exception:
+            db.rollback()
+            return False
+
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    """Delete a booking if it exists."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            db.begin(isolation="read committed")
+
+            # Lock the booking row.
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,)
+            )
+            if not rows:
+                db.rollback()
+                return False
+
+            room_id, starts_at = rows[0]
+            day = _utc_day(starts_at)
+
+            # Ensure the counter row exists and lock it.
+            db.execute(
+                "INSERT INTO room_day_counts (room_id, day, count) VALUES (%s, %s, 0) "
+                "ON CONFLICT (room_id, day) DO NOTHING",
+                (room_id, day)
+            )
+            db.execute(
+                "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+                (room_id, day)
+            )
+
+            # Delete the booking and decrement the counter.
+            db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            db.execute(
+                "UPDATE room_day_counts SET count = count - 1 WHERE room_id = %s AND day = %s",
+                (room_id, day)
+            )
+
+            db.commit()
+            return True
+
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            if attempt == _MAX_RETRIES - 1:
+                return False
+        except Exception:
+            db.rollback()
+            return False
+
+    return False

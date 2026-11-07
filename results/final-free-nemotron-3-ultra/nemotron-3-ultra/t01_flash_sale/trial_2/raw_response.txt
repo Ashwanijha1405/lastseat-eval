@@ -1,0 +1,18 @@
+```python
+def purchase(db, product_id: int, qty: int) -> bool:
+    # Single atomic statement: update stock if sufficient, then insert order.
+    # The CTE ensures the UPDATE and INSERT are executed atomically.
+    # If the UPDATE affects 0 rows (insufficient stock), the INSERT inserts nothing.
+    # RETURNING on the INSERT gives us a row only when the purchase succeeded.
+    rows = db.execute(
+        "WITH updated AS ("
+        "  UPDATE products SET stock = stock - %(qty)s "
+        "  WHERE id = %(product_id)s AND stock >= %(qty)s RETURNING id"
+        ")"
+        " INSERT INTO orders (product_id, qty) "
+        " SELECT %(product_id)s, %(qty)s FROM updated "
+        " RETURNING id",
+        {"product_id": product_id, "qty": qty}
+    )
+    return bool(rows)
+```

@@ -70,9 +70,9 @@ The official-CLI route is wired in `run.ps1` only. On Linux/macOS run its three 
 |---|---|---|---|---|---|---|
 | `claude-opus-5-5` | 15 | 18 | 1258 | 40436 | 5 of 144 | 0.00 |
 | `claude-sonnet-5-5` | 30 | 12 | 1458 | 49127 | 7 of 144 | 0.00 |
-| `claude-haiku-5-5` | 24 | 0 | 0 | 0 | 0 of 0 | 0.00 |
+| `claude-haiku-5-5` | 30 | 20 | 763 | 21531 | 3 of 92 | 0.00 |
 | `gemini-3.8-flash-high` | 19 | 335 | 576 | 17570 | 0 of 132 | 0.00 |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 27 | 119 | 994 | 31402 | 8 of 82 | 0.00 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 30 | 119 | 1812 | 49834 | 14 of 109 | 0.00 |
 
 Grader validation (`make validate`, 53 solutions): 21 min of grading time on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11).
 <!-- END report:runtime -->
@@ -84,9 +84,9 @@ Grader validation (`make validate`, 53 solutions): 21 min of grading time on the
 |---|---|---|---|---|---|---|
 | `claude-opus-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | 2026-11-07 | 30/30 (15 reused from pilots) | [`final-claude-opus-5-5-cli`](results/final-claude-opus-5-5-cli/summary.md) |
 | `claude-sonnet-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | 2026-11-07 | 30/30 | [`final-claude-sonnet-5-5-cli`](results/final-claude-sonnet-5-5-cli/summary.md) |
-| `claude-haiku-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | - | 0/30 | [`final-claude-haiku-5-5-cli`](results/final-claude-haiku-5-5-cli/summary.md) |
+| `claude-haiku-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | 2026-11-07 | 25/30 | [`final-claude-haiku-5-5-cli`](results/final-claude-haiku-5-5-cli/summary.md) |
 | `gemini-3.8-flash-high` | Antigravity CLI `agy --print` 1.5.3, Google sign-in | `-high` variant chosen by model id, every tool action denied, CLI system prompt included | 3 per task | 2026-11-07 | 30/30 (12 reused from pilots) | [`final-gemini-3.8-flash-high-cli`](results/final-gemini-3.8-flash-high-cli/summary.md) |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | OpenRouter free tier (served by Nvidia) | reasoning effort `high`, max_tokens 32000, max_price 0 | 3 per task | 2026-11-07 | 27/30 | [`final-free-nemotron-3-ultra`](results/final-free-nemotron-3-ultra/summary.md) |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | OpenRouter free tier (served by Nvidia) | reasoning effort `high`, max_tokens 32000, max_price 0 | 3 per task | 2026-11-07 | 30/30 | [`final-free-nemotron-3-ultra`](results/final-free-nemotron-3-ultra/summary.md) |
 <!-- END report:models -->
 
 All final runs use the same frozen tasks t01–t10, the same prompt (contract + `task.md`), and 3 trials per task. Where a final run reuses pilot trials, the model, CLI, effort and prompt were identical, and the reused answers were graded again by the current grader (listed per run in its `summary.md`).
@@ -96,19 +96,19 @@ All final runs use the same frozen tasks t01–t10, the same prompt (contract + 
 <!-- BEGIN report:results -->
 | task | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-5-5` | `gemini-3.8-flash-high` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
 |---|---|---|---|---|---|
-| t01_flash_sale | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 3/3 ✅ |
-| t02_on_call | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 3/3 ✅ |
-| t03_expense_budget | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 3/3 ✅ |
-| t04_room_booking | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 0/3 ❌ |
-| t05_wallet_transfer | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 3/3 ✅ |
-| t06_idempotent_payment | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 2/3 ❌ |
-| t07_node_drain | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 1/3 ❌ |
-| t08_expense_endpoints | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 2/2 (running) |
-| t09_room_rules | 3/3 ✅ | 3/3 ✅ | running | 3/3 ✅ | 0/2 (running) |
-| t10_room_rules_scaled | 3/3 ✅ | 3/3 ✅ | running | 2/3 ❌ | 1/2 (running) |
-| **trials passed** | 30/30 | 30/30 | 0/0 of 30 | 29/30 | 18/27 of 30 |
-| **mean score** | 1.000 | 1.000 | - | 0.967 | 0.694 |
-| **tasks with pass^3** | 10/10 | 10/10 | 0/10 | 9/10 | 4/10 |
+| t01_flash_sale | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t02_on_call | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t03_expense_budget | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t04_room_booking | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 0/3 ❌ |
+| t05_wallet_transfer | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t06_idempotent_payment | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ |
+| t07_node_drain | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 1/3 ❌ |
+| t08_expense_endpoints | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t09_room_rules | 3/3 ✅ | 3/3 ✅ | 0/1 (running) | 3/3 ✅ | 1/3 ❌ |
+| t10_room_rules_scaled | 3/3 ✅ | 3/3 ✅ | running | 2/3 ❌ | 1/3 ❌ |
+| **trials passed** | 30/30 | 30/30 | 24/25 of 30 | 29/30 | 20/30 |
+| **mean score** | 1.000 | 1.000 | 0.980 | 0.967 | 0.700 |
+| **tasks with pass^3** | 10/10 | 10/10 | 8/10 | 9/10 | 5/10 |
 | **latent_api_error warnings** | 0 | 0 | 0 | 4 | 0 |
 <!-- END report:results -->
 
@@ -197,6 +197,7 @@ Every task ships a reference solution that must pass and several deliberately wr
 Every failed final-run trial, with its category and files:
 
 <!-- BEGIN report:failures -->
+- `claude-haiku-5-5` · t09_room_rules · trial_1: **spec** — [verdict](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/verdict.json), [counterexample 1](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_1.txt), [counterexample 2](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_2.txt), [counterexample 3](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_3.txt)
 - `gemini-3.8-flash-high` · t10_room_rules_scaled · trial_2: **load** (exec_error): `AttributeError: module 'psycopg.errors' has no attribute 'TransactionRollbackError'` — [verdict](results/final-gemini-3.8-flash-high-cli/gemini-3.8-flash-high/t10_room_rules_scaled/trial_2/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t04_room_booking · trial_1: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_1/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t04_room_booking · trial_2: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_2/verdict.json)
@@ -207,6 +208,7 @@ Every failed final-run trial, with its category and files:
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t09_room_rules · trial_1: **spec** — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/verdict.json), [counterexample 1](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/counterexample_1.txt)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t09_room_rules · trial_2: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone, unknown) does not exis…` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_2/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t10_room_rules_scaled · trial_1: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_1/verdict.json)
+- `nvidia/nemotron-3-ultra-550b-a55b:free` · t10_room_rules_scaled · trial_3: **concurrency** — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/verdict.json), [counterexample 1](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_1.txt), [counterexample 2](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_2.txt), [counterexample 3](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_3.txt)
 
 Warnings (not scored):
 

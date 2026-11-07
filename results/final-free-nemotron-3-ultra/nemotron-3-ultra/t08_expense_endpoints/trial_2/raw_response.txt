@@ -1,0 +1,150 @@
+```python
+import psycopg.errors
+
+def approve_expense(db, expense_id: int) -> bool:
+    for _ in range(3):
+        try:
+            db.begin()
+            # Get department_id (never changes)
+            rows = db.execute(
+                "SELECT department_id FROM expenses WHERE id = %s",
+                (expense_id,)
+            )
+            dept_id = rows[0][0]
+
+            # Lock department row
+            rows = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,)
+            )
+            budget = rows[0][0]
+
+            # Lock expense row and read current amount, status
+            rows = db.execute(
+                "SELECT amount, status FROM expenses WHERE id = %s FOR UPDATE",
+                (expense_id,)
+            )
+            amount, status = rows[0]
+            if status != 'pending':
+                db.rollback()
+                return False
+
+            # Compute current approved total for the department
+            rows = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,)
+            )
+            approved_total = rows[0][0]
+
+            if approved_total + amount > budget:
+                db.rollback()
+                return False
+
+            # Approve the expense
+            db.execute(
+                "UPDATE expenses SET status = 'approved' WHERE id = %s",
+                (expense_id,)
+            )
+            db.commit()
+            return True
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            return False
+    return False
+
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    for _ in range(3):
+        try:
+            db.begin()
+            # Get department_id
+            rows = db.execute(
+                "SELECT department_id FROM expenses WHERE id = %s",
+                (expense_id,)
+            )
+            dept_id = rows[0][0]
+
+            # Lock department row
+            rows = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,)
+            )
+            budget = rows[0][0]
+
+            # Lock expense row and read current amount, status
+            rows = db.execute(
+                "SELECT amount, status FROM expenses WHERE id = %s FOR UPDATE",
+                (expense_id,)
+            )
+            old_amount, status = rows[0]
+
+            if status == 'approved':
+                # Compute current approved total (includes this expense)
+                rows = db.execute(
+                    "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                    "WHERE department_id = %s AND status = 'approved'",
+                    (dept_id,)
+                )
+                approved_total = rows[0][0]
+                new_total = approved_total - old_amount + new_amount
+                if new_total > budget:
+                    db.rollback()
+                    return False
+
+            # Update the amount
+            db.execute(
+                "UPDATE expenses SET amount = %s WHERE id = %s",
+                (new_amount, expense_id)
+            )
+            db.commit()
+            return True
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            return False
+    return False
+
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    for _ in range(3):
+        try:
+            db.begin()
+            # Lock department row
+            db.execute(
+                "SELECT 1 FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,)
+            )
+
+            # Compute current approved total
+            rows = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,)
+            )
+            approved_total = rows[0][0]
+
+            if approved_total > new_budget:
+                db.rollback()
+                return False
+
+            # Update the budget
+            db.execute(
+                "UPDATE departments SET budget = %s WHERE id = %s",
+                (new_budget, dept_id)
+            )
+            db.commit()
+            return True
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            return False
+    return False
+```

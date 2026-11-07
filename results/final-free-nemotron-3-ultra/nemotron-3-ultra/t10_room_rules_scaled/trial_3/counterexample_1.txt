@@ -1,0 +1,25 @@
+scenario: two bookings for the last place of a day
+R1: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 13, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 14, 0, tzinfo=datetime.timezone.utc))
+R2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 15, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 16, 0, tzinfo=datetime.timezone.utc))
+schedule choices: [0, 0, 0, 0, 0, 0, 0, 0]
+step 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 2   R1  INSERT INTO room_day_counts (room_id, day, count) VALUES (1, '2026-11-09'::date, 0) ON CONFLICT DO NOTHING -> INSERT 0 1
+step 3   R1  SELECT count FROM room_day_counts WHERE room_id = 1 AND day = '2026-11-09'::date FOR UPDATE -> [(0,)]
+step 4   R1  SELECT count FROM room_day_counts WHERE room_id = 1 AND day = '2026-11-09'::date -> [(0,)]
+step 5   R1  SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 14:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 13:00:00+00:00'::timestamptz AND starts_at >= '2026-11-09 00:00:00+00:00'::timestamptz AND starts_at < '2026-11-10 00:00:00+00:00'::timestamptz -> []
+step 6   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 13:00:00+00:00'::timestamptz, '2026-11-09 14:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 7   R1  UPDATE room_day_counts SET count = count + 1 WHERE room_id = 1 AND day = '2026-11-09'::date -> UPDATE 1
+step 8   R1  COMMIT -> COMMIT
+         R1  returned True
+step 9   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN
+step 10  R2  INSERT INTO room_day_counts (room_id, day, count) VALUES (1, '2026-11-09'::date, 0) ON CONFLICT DO NOTHING -> INSERT 0 0
+step 11  R2  SELECT count FROM room_day_counts WHERE room_id = 1 AND day = '2026-11-09'::date FOR UPDATE -> [(1,)]
+step 12  R2  SELECT count FROM room_day_counts WHERE room_id = 1 AND day = '2026-11-09'::date -> [(1,)]
+step 13  R2  SELECT 1 FROM bookings WHERE room_id = 1 AND starts_at < '2026-11-09 16:00:00+00:00'::timestamptz AND ends_at > '2026-11-09 15:00:00+00:00'::timestamptz AND starts_at >= '2026-11-09 00:00:00+00:00'::timestamptz AND starts_at < '2026-11-10 00:00:00+00:00'::timestamptz -> []
+step 14  R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 15:00:00+00:00'::timestamptz, '2026-11-09 16:00:00+00:00'::timestamptz) -> INSERT 0 1
+step 15  R2  UPDATE room_day_counts SET count = count + 1 WHERE room_id = 1 AND day = '2026-11-09'::date -> UPDATE 1
+step 16  R2  COMMIT -> COMMIT
+         R2  returned True
+invariant ok: no two bookings of the same room overlap
+INVARIANT VIOLATED: no room has more than 3 bookings on a UTC day  (got [(False,)])
+reproduced on re-run: True

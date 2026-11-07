@@ -1,0 +1,192 @@
+```python
+import datetime
+from datetime import timezone, timedelta
+import psycopg.errors
+
+def migrate(db) -> None:
+    # Table to track booking counts per room per UTC day
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS room_day_counts (
+            room_id int NOT NULL,
+            day date NOT NULL,
+            count int NOT NULL DEFAULT 0 CHECK (count <= 3),
+            PRIMARY KEY (room_id, day)
+        )
+    """)
+    # Index to speed up overlap checks
+    db.execute("""
+        CREATE INDEX IF NOT EXISTS bookings_room_id_starts_at_idx
+        ON bookings (room_id, starts_at)
+    """)
+    db.commit()
+
+def _utc_day(dt: datetime.datetime) -> datetime.date:
+    return dt.astimezone(timezone.utc).date()
+
+def _day_bounds(day: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
+    start = datetime.datetime.combine(day, datetime.time.min, tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    return start, end
+
+def book(db, room_id: int, starts_at: datetime.datetime, ends_at: datetime.datetime) -> bool:
+    day = _utc_day(starts_at)
+    day_start, day_end = _day_bounds(day)
+
+    db.begin()
+    try:
+        # Ensure a row exists for this room/day, then lock it
+        db.execute(
+            "INSERT INTO room_day_counts (room_id, day, count) VALUES (%s, %s, 0) ON CONFLICT DO NOTHING",
+            (room_id, day)
+        )
+        db.execute(
+            "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+            (room_id, day)
+        )
+        row = db.execute(
+            "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s",
+            (room_id, day)
+        )
+        if not row or row[0][0] >= 3:
+            db.rollback()
+            return False
+
+        # Check for overlapping bookings on the same day
+        overlap = db.execute(
+            """SELECT 1 FROM bookings
+               WHERE room_id = %s
+                 AND starts_at < %s
+                 AND ends_at > %s
+                 AND starts_at >= %s
+                 AND starts_at < %s""",
+            (room_id, ends_at, starts_at, day_start, day_end)
+        )
+        if overlap:
+            db.rollback()
+            return False
+
+        # Insert the booking and increment the daily count
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+            (room_id, starts_at, ends_at)
+        )
+        db.execute(
+            "UPDATE room_day_counts SET count = count + 1 WHERE room_id = %s AND day = %s",
+            (room_id, day)
+        )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+def reschedule(db, booking_id: int, new_starts_at: datetime.datetime, new_ends_at: datetime.datetime) -> bool:
+    new_day = _utc_day(new_starts_at)
+    new_day_start, new_day_end = _day_bounds(new_day)
+
+    db.begin()
+    try:
+        # Lock the booking row to get its current room and start time
+        booking = db.execute(
+            "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+            (booking_id,)
+        )
+        if not booking:
+            db.rollback()
+            return False
+        room_id, old_starts_at = booking[0]
+        old_day = _utc_day(old_starts_at)
+
+        # If the day doesn't change, we only need one lock; otherwise lock both days in a fixed order
+        days = sorted({old_day, new_day})
+        for d in days:
+            db.execute(
+                "INSERT INTO room_day_counts (room_id, day, count) VALUES (%s, %s, 0) ON CONFLICT DO NOTHING",
+                (room_id, d)
+            )
+        for d in days:
+            db.execute(
+                "SELECT 1 FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+                (room_id, d)
+            )
+
+        # Check overlap on the new day (excluding the booking itself)
+        overlap = db.execute(
+            """SELECT 1 FROM bookings
+               WHERE room_id = %s
+                 AND id != %s
+                 AND starts_at < %s
+                 AND ends_at > %s
+                 AND starts_at >= %s
+                 AND starts_at < %s""",
+            (room_id, booking_id, new_ends_at, new_starts_at, new_day_start, new_day_end)
+        )
+        if overlap:
+            db.rollback()
+            return False
+
+        # Check daily limit on the new day (if moving to a different day)
+        if new_day != old_day:
+            cnt_row = db.execute(
+                "SELECT count FROM room_day_counts WHERE room_id = %s AND day = %s",
+                (room_id, new_day)
+            )
+            if not cnt_row or cnt_row[0][0] >= 3:
+                db.rollback()
+                return False
+
+        # Update the booking
+        db.execute(
+            "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+            (new_starts_at, new_ends_at, booking_id)
+        )
+
+        # Adjust daily counts if the day changed
+        if new_day != old_day:
+            db.execute(
+                "UPDATE room_day_counts SET count = count - 1 WHERE room_id = %s AND day = %s",
+                (room_id, old_day)
+            )
+            db.execute(
+                "UPDATE room_day_counts SET count = count + 1 WHERE room_id = %s AND day = %s",
+                (room_id, new_day)
+            )
+
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+def cancel(db, booking_id: int) -> bool:
+    db.begin()
+    try:
+        # Lock the booking row to get its room and day
+        booking = db.execute(
+            "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+            (booking_id,)
+        )
+        if not booking:
+            db.rollback()
+            return False
+        room_id, starts_at = booking[0]
+        day = _utc_day(starts_at)
+
+        # Lock the daily count row
+        db.execute(
+            "SELECT 1 FROM room_day_counts WHERE room_id = %s AND day = %s FOR UPDATE",
+            (room_id, day)
+        )
+
+        # Delete the booking and decrement the count
+        db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+        db.execute(
+            "UPDATE room_day_counts SET count = count - 1 WHERE room_id = %s AND day = %s",
+            (room_id, day)
+        )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+```

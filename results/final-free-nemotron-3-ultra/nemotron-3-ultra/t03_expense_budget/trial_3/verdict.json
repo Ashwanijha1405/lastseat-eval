@@ -1,0 +1,142 @@
+{
+  "task_id": "t03_expense_budget",
+  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t03_expense_budget/trial_3/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "approval within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval within budget succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(1, 40, 'pending')]\nstep 3   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(30,)]\nstep 5   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval reaching the budget exactly succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval reaching the budget exactly succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(1, 70, 'pending')]\nstep 3   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(30,)]\nstep 5   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval over budget is refused cleanly\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(1, 71, 'pending')]\nstep 3   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(30,)]\nstep 5   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses\n"
+    },
+    {
+      "name": "an expense that is not pending is refused",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: an expense that is not pending is refused\ncall: approve_expense(db, expense_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 1 FOR UPDATE -> [(1, 10, 'rejected')]\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'rejected' FROM expenses WHERE id = 1\n"
+    },
+    {
+      "name": "other departments' approvals do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: other departments' approvals do not count\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT department_id, amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(1, 60, 'pending')]\nstep 3   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 4   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(0,)]\nstep 5   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'approved' FROM expenses WHERE id = 2\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "nothing approved yet, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 148,
+      "dfs_schedules": 148,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.53,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "one already approved, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 148,
+      "dfs_schedules": 148,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.64,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two approvals that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 148,
+      "dfs_schedules": 148,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.7,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approvals in two different departments",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 924,
+      "dfs_schedules": 924,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 28.62,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 42.82,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "provider": "Nvidia",
+    "finish_reason": "stop",
+    "prompt_tokens": 1225,
+    "completion_tokens": 5412,
+    "cost_usd": 0.0,
+    "seconds": 89.81,
+    "attempts": 1
+  }
+}

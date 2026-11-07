@@ -1,0 +1,59 @@
+```python
+import psycopg.errors
+
+def approve_expense(db, expense_id: int) -> bool:
+    """
+    Approve an expense if it is pending and the department's budget allows it.
+    Returns True on success, False otherwise.
+    """
+    max_retries = 10
+    for attempt in range(max_retries + 1):
+        try:
+            db.begin()
+
+            # Lock the department row to serialize approvals for the same department.
+            # The subquery fetches the department_id without locking the expense row.
+            rows = db.execute(
+                "SELECT id FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = %s) FOR UPDATE",
+                (expense_id,)
+            )
+            if not rows:
+                db.rollback()
+                return False
+            dept_id = rows[0][0]
+
+            # Conditionally update the expense to 'approved'.
+            # The CTE computes the current sum of approved expenses for the department.
+            # The UPDATE only proceeds if the expense is still pending and the new total stays within budget.
+            update_sql = """
+                WITH approved_sum AS (
+                    SELECT COALESCE(SUM(amount), 0) AS total
+                    FROM expenses
+                    WHERE department_id = %s AND status = 'approved'
+                )
+                UPDATE expenses
+                SET status = 'approved'
+                WHERE id = %s
+                  AND status = 'pending'
+                  AND (SELECT total FROM approved_sum) + amount <= (SELECT budget FROM departments WHERE id = %s)
+                RETURNING id
+            """
+            rows = db.execute(update_sql, (dept_id, expense_id, dept_id))
+
+            if rows:
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+
+        except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure):
+            db.rollback()
+            if attempt == max_retries:
+                return False
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+```
