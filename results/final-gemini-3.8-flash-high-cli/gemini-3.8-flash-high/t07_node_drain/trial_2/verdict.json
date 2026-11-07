@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.09,
+      "seconds": 1.68,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -59,10 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.15,
+      "seconds": 1.5,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -78,10 +84,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.11,
+      "seconds": 1.43,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -94,7 +103,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 3.55,
+  "seconds": 4.91,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -118,5 +127,6 @@
     "thinking_tokens": 51389,
     "tool_calls_denied": 2,
     "tool_calls_ran": []
-  }
+  },
+  "regraded_from_disk": true
 }

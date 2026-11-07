@@ -46,10 +46,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.76,
+      "seconds": 1.86,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "opposite transfers between two accounts",
@@ -65,10 +68,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.79,
+      "seconds": 2.01,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -84,10 +90,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.79,
+      "seconds": 2.06,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -100,7 +109,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 5.63,
+  "seconds": 6.25,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -121,5 +130,6 @@
     "num_turns": 1,
     "attempts": 1,
     "provider": "claude.ai (claude -p)"
-  }
+  },
+  "regraded_from_disk": true
 }

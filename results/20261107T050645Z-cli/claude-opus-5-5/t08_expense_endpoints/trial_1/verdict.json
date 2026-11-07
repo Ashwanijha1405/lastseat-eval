@@ -76,7 +76,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 27.7
+      "seconds": 38.15,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -92,7 +98,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.34
+      "seconds": 7.13,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -108,7 +120,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.44
+      "seconds": 7.69,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -124,7 +142,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 22.42
+      "seconds": 33.16,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a raise that both fit",
@@ -140,7 +164,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 28.48
+      "seconds": 44.93,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -156,7 +186,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.45
+      "seconds": 6.54,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -172,7 +208,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 34.38
+      "seconds": 51.05,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -182,9 +224,11 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 126.76,
+  "seconds": 189.54,
+  "warnings": [],
   "failure_category": null,
   "api": {
     "source": "official-cli",
@@ -203,5 +247,6 @@
     "num_turns": 1,
     "attempts": 1,
     "provider": "claude.ai (claude -p)"
-  }
+  },
+  "regraded_from_disk": true
 }

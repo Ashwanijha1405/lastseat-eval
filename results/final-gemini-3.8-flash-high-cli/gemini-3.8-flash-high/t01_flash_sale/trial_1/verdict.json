@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.14,
+      "seconds": 0.17,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two buyers, both fit",
@@ -59,10 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.14,
+      "seconds": 0.17,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -75,7 +81,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 0.48,
+  "seconds": 0.59,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -99,5 +105,6 @@
     "thinking_tokens": 44334,
     "tool_calls_denied": 1,
     "tool_calls_ran": []
-  }
+  },
+  "regraded_from_disk": true
 }

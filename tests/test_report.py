@@ -16,5 +16,5 @@ def test_write_fills_markers_idempotently_and_reports_missing_ones(tmp_path, mon
 
 def test_sections_come_from_the_results_directory():
     s = report.sections()
-    assert set(s) == {"models", "results", "failures", "validation", "runtime"}
+    assert set(s) == {"models", "results", "failures", "pilot_concurrency", "validation", "runtime"}
     assert "behave as expected" in s["validation"]

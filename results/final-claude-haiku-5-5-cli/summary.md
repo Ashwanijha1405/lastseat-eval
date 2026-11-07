@@ -19,15 +19,15 @@ CLI `2.1.319 (Claude Code)`, effort `high`, command `claude.EXE -p --model claud
 
 - claude-haiku-5-5: 29/30 passed, mean score 0.983; failures: spec 1
 
-Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe schedule; **harness** = the grader failed.
+Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **spec** = a logic bug that shows without concurrency: a solo check failed, or a serial schedule (one request finished before the next started) broke an invariant or liveness; **concurrency** = correct alone and in every serial order, but an interleaved schedule broke an invariant or liveness; **harness** = the grader failed.
 
 ## Failures
 
 ### claude-haiku-5-5 / t09_room_rules / trial_1: spec
 - status `graded`, load_error `None`, safety_reason `None`, liveness_reason `None`, finish_reason `end_turn`, completion_tokens 10516
 - solo FAIL: a booking moves within a full day (it does not count against itself): returned False, expected True; violated: expected state: SELECT starts_at = '2026-11-09T15:00:00Z' FROM bookings WHERE id = 1 (got [(False,)])
-- scenario `two moves between two days in opposite directions, both fit`: status ok, safe=True (0 unsafe), live=False (148 unlive) of 148 schedules, exhaustive=True, reproduced=True
-- scenario `a move within a day and a booking on that day, both fit`: status ok, safe=True (0 unsafe), live=False (80 unlive) of 119 schedules, exhaustive=True, reproduced=True
+- scenario `two moves between two days in opposite directions, both fit`: status ok, safe=True (0 unsafe), live=False (148 unlive) of 148 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 2 unlive of 2
+- scenario `a move within a day and a booking on that day, both fit`: status ok, safe=True (0 unsafe), live=False (80 unlive) of 119 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 1 unlive of 2
 - counterexample: `results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_1.txt`
 - counterexample: `results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_2.txt`
 - counterexample: `results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_3.txt`

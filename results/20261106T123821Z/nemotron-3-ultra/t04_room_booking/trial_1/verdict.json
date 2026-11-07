@@ -14,9 +14,11 @@
     "total": 0.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.06,
+  "seconds": 0.08,
+  "warnings": [],
   "failure_category": "load",
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",

@@ -52,7 +52,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.79
+      "seconds": 10.41,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -68,7 +74,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.82
+      "seconds": 11.02,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two approvals that both fit",
@@ -84,7 +96,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.65
+      "seconds": 9.32,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approvals in two different departments",
@@ -100,7 +118,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 60.96
+      "seconds": 89.13,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -110,9 +134,11 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 81.53,
+  "seconds": 120.3,
+  "warnings": [],
   "failure_category": null,
   "api": {
     "source": "official-cli",
@@ -131,5 +157,6 @@
     "num_turns": 1,
     "attempts": 1,
     "provider": "claude.ai (claude -p)"
-  }
+  },
+  "regraded_from_disk": true
 }

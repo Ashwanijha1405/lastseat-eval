@@ -1,6 +1,6 @@
 {
   "task_id": "t09_room_rules",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -106,10 +106,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.52,
+      "seconds": 2.13,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two overlapping bookings of a free slot",
@@ -125,10 +128,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.58,
+      "seconds": 2.19,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move from another day and a booking, for the last place of a day",
@@ -144,10 +150,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 15.32,
+      "seconds": 22.36,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two moves from different days, for the last place of a day",
@@ -163,10 +172,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 73.63,
+      "seconds": 102.75,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move from another day and a booking, onto the same slot",
@@ -182,10 +194,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 15.77,
+      "seconds": 22.99,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two moves between two days in opposite directions, both fit",
@@ -201,10 +216,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 14.78,
+      "seconds": 20.59,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a cancellation and a booking on the same day, both fit",
@@ -220,10 +238,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 3.23,
+      "seconds": 4.24,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move within a day and a booking on that day, both fit",
@@ -239,10 +260,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 3.22,
+      "seconds": 4.15,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -255,7 +279,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 130.19,
+  "seconds": 182.84,
   "warnings": [],
   "failure_category": "spec",
   "api": {
@@ -268,5 +292,6 @@
     "cost_usd": 0.0,
     "seconds": 166.09,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

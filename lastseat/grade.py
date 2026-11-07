@@ -10,6 +10,7 @@ process instead of leaking a thread into the caller.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import subprocess
@@ -67,6 +68,13 @@ class ScenarioResult:
     must_not_block: bool = False
     blocked_schedules: int = 0  # must_not_block only: schedules where a request waited for another
     liveness_reason: str | None = None  # BLOCKED when blocking made the scenario not live
+    # Serial schedules (one request finishes before the next starts), one per order of the
+    # requests: found among the explored ones, missing orders run separately. They decide
+    # the failure category only; schedules/unsafe/unlive counts and scores do not include
+    # the separate runs.
+    serial_schedules: int = 0
+    serial_unsafe: int = 0
+    serial_unlive: int = 0  # includes step-limit, hangs and must_not_block waits
 
 
 @dataclass
@@ -100,11 +108,12 @@ def failure_category(v: dict) -> str | None:
     """One word for why a graded cell failed (None if it passed), from a verdict dict.
 
     load: never graded (syntax, imports, missing function, migrate_error,
-    forbidden_migrate, no_code). concurrency: some schedule broke an invariant.
-    spec: no unsafe schedule, but a solo check failed (wrong when run alone, e.g.
-    the UTC-day check); this includes vacuous safety, since that needs a failed
-    success check. concurrency again: correct alone and safe, but a request that
-    fits failed in some schedule (liveness). harness: the grader itself failed.
+    forbidden_migrate, no_code). harness: the grader itself failed.
+    spec: a logic bug that shows without concurrency: a solo check failed (this
+    includes vacuous safety, which needs a failed success check), or a serial
+    schedule (one request finished before the next started) broke an invariant
+    or liveness. concurrency: correct alone and in every serial order, but some
+    interleaved schedule broke safety or liveness.
     """
     if v.get("passed"):
         return None
@@ -112,10 +121,14 @@ def failure_category(v: dict) -> str | None:
         return "load"
     if v.get("status") != "graded":
         return "harness"
-    if any(not s.get("safe") for s in v.get("scenarios") or []):
-        return "concurrency"
     if any(not c.get("passed") for c in v.get("solo") or []):
         return "spec"
+    for s in v.get("scenarios") or []:
+        if "serial_schedules" not in s:
+            raise ValueError(f"scenario {s.get('name')!r} was graded before serial schedules were recorded; "
+                             "re-grade it (python -m lastseat.summary <run> --regrade)")
+        if s["serial_unsafe"] or s["serial_unlive"]:
+            return "spec"
     return "concurrency"
 
 
@@ -246,11 +259,23 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
         with Explorer(name, requests, sc.invariants, role=APP_ROLE, conninfo=conninfo) as ex:
             exp = ex.explore(max_schedules=max_schedules, random_schedules=random_schedules, seed=seed,
                              is_failure=lambda r: not r.invariants_hold or unlive(r) or blocked(r))
+            stopped = exp.harness_error
+            serial = [] if stopped is not None and stopped.status != "model_hang" else _serial_schedules(
+                ex, [] if stopped is not None else exp.results, len(requests))
     finally:
         drop_database(name, conninfo)
 
+    status = "ok"
+    for r in serial:
+        if r.status not in ("ok", "model_hang"):
+            status = r.status  # the grader failed on a serial run: a harness error, reported by the caller
+    serial_counts = dict(
+        serial_schedules=len(serial),
+        serial_unsafe=sum(1 for r in serial if r.status == "ok" and not r.invariants_hold),
+        serial_unlive=sum(1 for r in serial if r.status == "model_hang" or unlive(r) or blocked(r)),
+    )
+
     header = f"scenario: {sc.name}\n" + "".join(f"R{i + 1}: {call}\n" for i, call in enumerate(sc.requests))
-    stopped = exp.harness_error
     if stopped is not None:
         # Exploration stopped early (model_hang, or a harness error the caller
         # reports): nothing about this scenario can be called safe or live.
@@ -258,7 +283,7 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
                               False, exp.random_seed, safe=False, live=False,
                               unsafe_schedules=0, unlive_schedules=0, all_reproduced=True,
                               counterexamples=[header + stopped.trace()],
-                              seconds=round(time.monotonic() - started, 2))
+                              seconds=round(time.monotonic() - started, 2), **serial_counts)
 
     unsafe = [r for r in exp.results if not r.invariants_hold]
     unlive_runs = [r for r in exp.results if unlive(r)]
@@ -266,7 +291,7 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
     return ScenarioResult(
         name=sc.name,
         must_all_succeed=sc.must_all_succeed,
-        status="ok",
+        status=status,
         schedules=len(exp.results),
         dfs_schedules=exp.dfs_schedules,
         exhaustive=exp.exhaustive,
@@ -282,7 +307,34 @@ def _scenario(task: Task, solution: Solution, sc: Scenario, name: str, conninfo:
         must_not_block=sc.must_not_block,
         blocked_schedules=len(blocked_runs),
         liveness_reason=BLOCKED if blocked_runs else None,
+        **serial_counts,
     )
+
+
+def _serial_schedules(ex: Explorer, explored: list[ScheduleResult], n: int) -> list[ScheduleResult]:
+    """One serial schedule per order of the n requests.
+
+    A schedule is serial when its granted steps, read as the list of requests
+    that sent them, have each request in one unbroken block (see
+    ScheduleResult.serial_order). An exhaustive search contains every order;
+    a capped one always contains R1, R2, ... (its first schedule) but may miss
+    the others, which are then run with Explorer.run(order=...).
+    """
+    def covers(order: tuple[int, ...], perm: tuple[int, ...]) -> bool:
+        # A request that never called db does not show in serial_order; where it ran does not matter.
+        return tuple(i for i in perm if i in order) == order
+
+    found = [r for r in explored if r.status == "ok" and r.serial_order is not None]
+    picked: list[ScheduleResult] = []
+    for perm in itertools.permutations(range(n)):
+        r = next((r for r in found if covers(r.serial_order, perm)), None)
+        if r is None:
+            r = ex.run(order=perm)
+            if r.status == "ok" and r.serial_order is None:
+                raise AssertionError(f"run(order={perm}) interleaved: {r.grants}")
+        if all(r is not p for p in picked):
+            picked.append(r)
+    return picked
 
 
 def _waits_note(r: ScheduleResult, is_blocked: bool) -> str:

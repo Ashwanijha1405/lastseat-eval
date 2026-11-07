@@ -1,6 +1,6 @@
 {
   "task_id": "t01_flash_sale",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t01_flash_sale/trial_3/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t01_flash_sale/trial_3/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.24,
+      "seconds": 0.19,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two buyers, both fit",
@@ -59,10 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.14,
+      "seconds": 0.18,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -75,7 +81,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 0.57,
+  "seconds": 0.6,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -88,5 +94,6 @@
     "cost_usd": 0.0,
     "seconds": 109.23,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

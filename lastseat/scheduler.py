@@ -117,6 +117,21 @@ class ScheduleResult:
                 for req, by in sorted(waits.items()) if by]
 
     @property
+    def serial_order(self) -> tuple[int, ...] | None:
+        """The requests in the order they ran, if this schedule is serial: each
+        request's granted steps form one unbroken block, so it finished before
+        the next one took its first step. None if any two requests interleaved.
+        A request that never called db does not appear."""
+        order: list[int] = []
+        for _, req, _ in self.grants:
+            if order and order[-1] == req:
+                continue
+            if req in order:
+                return None
+            order.append(req)
+        return tuple(order)
+
+    @property
     def success_holds(self) -> bool:
         """All success checks hold."""
         return self.status == "ok" and all(i.holds for i in self.invariants if i.kind == "success")
@@ -479,11 +494,14 @@ class Explorer:
             r.reproduced = self.run(r.choices).fingerprint() == r.fingerprint()
         return Exploration(results, exhaustive, dfs_schedules, random_seed, failures)
 
-    def run(self, prefix: Sequence[int] = (), rng: random.Random | None = None) -> ScheduleResult:
+    def run(self, prefix: Sequence[int] = (), rng: random.Random | None = None,
+            order: Sequence[int] | None = None) -> ScheduleResult:
         """Run one schedule on a fresh database.
 
         At the i-th choice point take `prefix[i]`; past the prefix take a
-        random READY request if `rng` is given, else the lowest-numbered one.
+        random READY request if `rng` is given, the first READY request in
+        `order` if that is given (with no prefix: the serial schedule in that
+        order), else the lowest-numbered one.
         """
         _recreate_database(self._admin, self.run_db, self.template, owner=self.role)
         run = _Run(self.step_limit)
@@ -491,7 +509,7 @@ class Explorer:
         try:
             conns = [connect(self.run_db, self.conninfo, self.role) for _ in self.requests]
             workers = [_Worker(i, fn, c, run) for i, (fn, c) in enumerate(zip(self.requests, conns))]
-            status, points = self._drive(run, workers, tuple(prefix), rng)
+            status, points = self._drive(run, workers, tuple(prefix), rng, order)
             invariants = self._check_invariants(workers) if status == "ok" else ()
         finally:
             for c in conns:
@@ -514,7 +532,8 @@ class Explorer:
         )
 
     def _drive(
-        self, run: _Run, workers: list[_Worker], prefix: tuple[int, ...], rng: random.Random | None
+        self, run: _Run, workers: list[_Worker], prefix: tuple[int, ...], rng: random.Random | None,
+        order: Sequence[int] | None = None,
     ) -> tuple[str, list[Choice]]:
         deadline = time.monotonic() + self.schedule_timeout_s
         points: list[Choice] = []
@@ -542,6 +561,8 @@ class Explorer:
                             break
                     elif rng is not None:
                         pick = rng.choice(ready)
+                    elif order is not None:
+                        pick = next(i for i in order if i in ready)
                     else:
                         pick = ready[0]
                     points.append((ready, pick))

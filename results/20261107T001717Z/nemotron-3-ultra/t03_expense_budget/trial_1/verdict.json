@@ -1,6 +1,6 @@
 {
   "task_id": "t03_expense_budget",
-  "solution": "/app/results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/solution.py",
+  "solution": "results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -54,7 +54,13 @@
       "counterexamples": [
         "scenario: nothing approved yet, two approvals that do not both fit\nR1: approve_expense(db, expense_id=1)\nR2: approve_expense(db, expense_id=2)\nschedule choices: [0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 1 FOR UPDATE OF d -> [(1, 60, 100, 0)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 AND status = 'pending' RETURNING id -> UPDATE 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> blocked (waiting for R1)\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 5 resumed -> [(1, 50, 100, 0)]\nstep 7   R2  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.11
+      "seconds": 1.7,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -72,7 +78,13 @@
       "counterexamples": [
         "scenario: one already approved, two approvals that do not both fit\nR1: approve_expense(db, expense_id=2)\nR2: approve_expense(db, expense_id=3)\nschedule choices: [0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 FOR UPDATE OF d -> [(1, 40, 100, 30)]\nstep 3   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' RETURNING id -> UPDATE 1 [(2,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT e.department_id, e.amount, d.budget, (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = d.id AND status = 'approved') AS approved_sum FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 3 FOR UPDATE OF d -> blocked (waiting for R1)\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 5 resumed -> [(1, 50, 100, 30)]\nstep 7   R2  UPDATE expenses SET status = 'approved' WHERE id = 3 AND status = 'pending' RETURNING id -> UPDATE 1 [(3,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.03
+      "seconds": 1.55,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two approvals that both fit",
@@ -88,7 +100,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.67
+      "seconds": 1.07,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approvals in two different departments",
@@ -104,7 +122,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.77
+      "seconds": 2.86,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -114,9 +138,11 @@
     "total": 0.5
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 4.87,
+  "seconds": 7.6,
+  "warnings": [],
   "failure_category": "concurrency",
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -128,5 +154,6 @@
     "cost_usd": 0.0,
     "seconds": 191.81,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

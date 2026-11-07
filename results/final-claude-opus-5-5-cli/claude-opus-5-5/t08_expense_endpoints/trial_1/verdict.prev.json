@@ -1,0 +1,230 @@
+{
+  "task_id": "t08_expense_endpoints",
+  "solution": "results/final-claude-opus-5-5-cli/claude-opus-5-5/t08_expense_endpoints/trial_1/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "approval within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval within budget succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 2   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(70, 'pending')]\nstep 6   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' AND id <> 2 -> [(30,)]\nstep 7   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval over budget is refused cleanly\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 2   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT amount, status FROM expenses WHERE id = 2 FOR UPDATE -> [(71, 'pending')]\nstep 6   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' AND id <> 2 -> [(30,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses\n"
+    },
+    {
+      "name": "an expense that is not pending is not approved",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: an expense that is not pending is not approved\ncall: approve_expense(db, expense_id=1)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 1   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT amount, status FROM expenses WHERE id = 1 FOR UPDATE -> [(10, 'rejected')]\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'rejected' FROM expenses WHERE id = 1\n"
+    },
+    {
+      "name": "raising an approved expense within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: raising an approved expense within budget succeeds\ncall: edit_expense(db, expense_id=1, new_amount=60)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 1   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT status FROM expenses WHERE id = 1 FOR UPDATE -> [('approved',)]\nstep 6   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' AND id <> 1 -> [(40,)]\nstep 7   R1  UPDATE expenses SET amount = 60 WHERE id = 1 -> UPDATE 1\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(amount ORDER BY id) = '{60,40}' AND bool_and(status = 'approved') FROM expenses\n"
+    },
+    {
+      "name": "raising an approved expense over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: raising an approved expense over budget is refused cleanly\ncall: edit_expense(db, expense_id=1, new_amount=61)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 1   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT status FROM expenses WHERE id = 1 FOR UPDATE -> [('approved',)]\nstep 6   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' AND id <> 1 -> [(40,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(amount ORDER BY id) = '{30,40}' FROM expenses\n"
+    },
+    {
+      "name": "a pending expense may be raised above the budget",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: a pending expense may be raised above the budget\ncall: edit_expense(db, expense_id=2, new_amount=500)\nschedule choices: []\nstep 1   R1  SELECT department_id FROM expenses WHERE id = 2   [autocommit] -> [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 4   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 5   R1  SELECT status FROM expenses WHERE id = 2 FOR UPDATE -> [('pending',)]\nstep 6   R1  UPDATE expenses SET amount = 500 WHERE id = 2 -> UPDATE 1\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT amount = 500 AND status = 'pending' FROM expenses WHERE id = 2\n"
+    },
+    {
+      "name": "lowering the budget to exactly the approved total succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: lowering the budget to exactly the approved total succeeds\ncall: change_budget(db, dept_id=1, new_budget=70)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(70,)]\nstep 4   R1  UPDATE departments SET budget = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT budget = 70 FROM departments WHERE id = 1\n"
+    },
+    {
+      "name": "lowering the budget below the approved total is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: lowering the budget below the approved total is refused cleanly\ncall: change_budget(db, dept_id=1, new_budget=69)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(70,)]\nstep 4   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT budget = 100 FROM departments WHERE id = 1\n"
+    },
+    {
+      "name": "other departments' approvals do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: other departments' approvals do not count\ncall: change_budget(db, dept_id=1, new_budget=20)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(10,)]\nstep 4   R1  UPDATE departments SET budget = 20 WHERE id = 1 -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(budget ORDER BY id) = '{20,100}' FROM departments\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "approval and a raise of an approved expense, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 920,
+      "dfs_schedules": 920,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 30.2,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approval and a budget cut, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 156,
+      "dfs_schedules": 156,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 5.51,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "raise of an approved expense and a budget cut, not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 156,
+      "dfs_schedules": 156,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.95,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "a pending expense is raised while it is being approved",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 755,
+      "dfs_schedules": 755,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 25.48,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approval and a raise that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 920,
+      "dfs_schedules": 920,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 33.38,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approval and a budget cut that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 156,
+      "dfs_schedules": 156,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 5.7,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approval in one department, budget cut in another",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 1287,
+      "dfs_schedules": 1287,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 39.02,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 144.85,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "model_id": "claude-opus-5-5",
+    "models_shown": [
+      "claude-opus-5-5"
+    ],
+    "cli_version": "2.1.319 (Claude Code)",
+    "date_utc": "2026-11-07T05:08:00+00:00",
+    "finish_reason": "end_turn",
+    "completion_tokens": 2210,
+    "prompt_tokens": 2,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": 0.0763984,
+    "seconds": 21.57,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "claude.ai (claude -p)"
+  }
+}

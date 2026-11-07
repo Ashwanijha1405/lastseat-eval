@@ -779,3 +779,40 @@ Claude drafted:
 Review: every claim in README prose against SPEC/results; the citations in
 section 9 (CONCUR, REFUTE, TestCase-Eval are marked to verify: Claude was not
 sure of authors/years/links); whether the limitations list is complete.
+
+## 2026-11-08: failure category from serial schedules; full regrade
+
+The human asked for this rule change. It changes categories only; no score
+changes.
+
+Claude drafted:
+- `ScheduleResult.serial_order` (scheduler.py): a schedule is serial when each
+  request's granted steps form one unbroken block. `Explorer.run(order=...)`
+  runs the serial schedule for a given order of requests.
+- `grade._serial_schedules`: one serial schedule per order of the requests. It
+  takes them from the explored schedules when they are there (an exhaustive
+  search has all of them; depth-first search always starts with R1, R2, ...)
+  and runs a missing order separately. Those extra runs are not counted in
+  schedules, unsafe/unlive counts or scores. ScenarioResult gains
+  serial_schedules / serial_unsafe / serial_unlive.
+- `failure_category`:
+  - spec = a solo check failed, or a serial schedule broke safety or
+    liveness;
+  - concurrency = correct alone and serially, but an interleaved schedule
+    failed;
+  - load and harness are unchanged;
+  - a verdict without the serial counts raises an error instead of being
+    guessed.
+- Tests: the serial orders among the 20 interleavings and run(order=); a
+  lost-update solution is concurrency; a counter-without-backfill solution
+  (solo check passes) is spec; a capped search runs the missing serial order
+  without scoring it; the category table.
+- Every run and the validation suite were regraded from disk (no API calls).
+  All summary.md files and the README tables were regenerated.
+- README: a generated `pilot_concurrency` section listing concurrency failures
+  outside the final runs, with attempt counts over all non-dry runs; prose on
+  the Nemotron t03 stale-SUM race.
+
+Review: whether "serial" should also cover requests that never call the
+database (they are ignored when matching orders); the t03 prose in README
+section 7.

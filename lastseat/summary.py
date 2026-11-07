@@ -105,9 +105,10 @@ def summarize(run: Path) -> str:
         out.append(f"- {m}: {sum(1 for v in vs if v.get('passed'))}/{n} passed, mean score "
                    f"{sum(v.get('scores', {}).get('total', 0) for v in vs) / n:.3f}; failures: {counts}")
     out += ["", "Failure categories: **load** = never graded (syntax, import, missing function, migrate_error,"
-            " forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request"
-            " that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe"
-            " schedule; **harness** = the grader failed.", "", "## Failures", ""]
+            " forbidden_migrate, no_code); **spec** = a logic bug that shows without concurrency: a solo check"
+            " failed, or a serial schedule (one request finished before the next started) broke an invariant or"
+            " liveness; **concurrency** = correct alone and in every serial order, but an interleaved schedule broke"
+            " an invariant or liveness; **harness** = the grader failed.", "", "## Failures", ""]
     for m in models:
         for t in tasks:
             for d, v in cells[m, t]:
@@ -131,7 +132,9 @@ def summarize(run: Path) -> str:
                                    f"({sc.get('unlive_schedules')} unlive"
                                    + (f", {sc.get('blocked_schedules')} blocked" if sc.get("must_not_block") else "")
                                    + f") of {sc.get('schedules')} schedules, "
-                                   f"exhaustive={sc.get('exhaustive')}, reproduced={sc.get('all_reproduced')}")
+                                   f"exhaustive={sc.get('exhaustive')}, reproduced={sc.get('all_reproduced')}; "
+                                   f"serial: {sc.get('serial_unsafe')} unsafe, {sc.get('serial_unlive')} unlive "
+                                   f"of {sc.get('serial_schedules')}")
                 for f in sorted(d.glob("counterexample_*.txt")):
                     out.append(f"- counterexample: `{f.relative_to(run.parent.parent).as_posix()}`")
                 out.append("")

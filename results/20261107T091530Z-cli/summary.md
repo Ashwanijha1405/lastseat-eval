@@ -7,19 +7,24 @@ CLI `1.5.3`, effort `set by the model id`, command `agy.EXE --print '' --input-f
 | task | gemini-3.8-flash-high |
 |---|---|
 | t03_expense_budget | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: yes** |
-| t08_expense_endpoints | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: yes** |
+| t08_expense_endpoints | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) ⚠ latent_api_error<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: yes** |
 | t09_room_rules | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: yes** |
-| t10_room_rules_scaled | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: FAIL [load] (exec_error) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: no** |
+| t10_room_rules_scaled | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: FAIL [load] (exec_error) 0.00 (sa 0.00 / so 0.00 / li 0.00) ⚠ latent_api_error<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: no** |
 
 - gemini-3.8-flash-high: 11/12 passed, mean score 0.917; failures: load 1
 
-Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe schedule; **harness** = the grader failed.
+Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **spec** = a logic bug that shows without concurrency: a solo check failed, or a serial schedule (one request finished before the next started) broke an invariant or liveness; **concurrency** = correct alone and in every serial order, but an interleaved schedule broke an invariant or liveness; **harness** = the grader failed.
 
 ## Failures
 
 ### gemini-3.8-flash-high / t10_room_rules_scaled / trial_2: load
 - status `load_error`, load_error `exec_error`, safety_reason `None`, liveness_reason `None`, finish_reason `SUCCESS`, completion_tokens 54254
 - load_detail: `AttributeError: module 'psycopg.errors' has no attribute 'TransactionRollbackError'`
+
+## Warnings (do not change the score)
+
+- gemini-3.8-flash-high / t08_expense_endpoints / trial_2: **latent_api_error** `psycopg.errors.TransactionRollbackError` at line(s) 53, 113, 154: not defined in the pinned psycopg 3.3.6 (passed anyway: the name is looked up only when that line runs)
+- gemini-3.8-flash-high / t10_room_rules_scaled / trial_2: **latent_api_error** `psycopg.errors.TransactionRollbackError` at line(s) 8: not defined in the pinned psycopg 3.3.6
 
 ## API
 

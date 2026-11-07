@@ -1,0 +1,134 @@
+{
+  "task_id": "t04_room_booking",
+  "solution": "results/final-gemini-3.8-flash-high-cli/gemini-3.8-flash-high/t04_room_booking/trial_1/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "free slot is booked",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: free slot is booked\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 3   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 AND bool_and(room_id = 1 AND starts_at = '2026-11-09T10:00:00Z'\n                                 AND ends_at = '2026-11-09T11:00:00Z')\nFROM bookings\n\n"
+    },
+    {
+      "name": "overlapping booking is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: overlapping booking is refused cleanly\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 30, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 30, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:30:00+00:00'::timestamptz, '2026-11-09 11:30:00+00:00'::timestamptz) -> ERROR 23P01 ExclusionViolation: conflicting key value violates exclusion constraint \"bookings_no_overlap\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 FROM bookings\n"
+    },
+    {
+      "name": "booking inside an existing booking is refused",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: booking inside an existing booking is refused\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> ERROR 23P01 ExclusionViolation: conflicting key value violates exclusion constraint \"bookings_no_overlap\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 1 FROM bookings\n"
+    },
+    {
+      "name": "back-to-back booking is allowed",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: back-to-back booking is allowed\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 12, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 11:00:00+00:00'::timestamptz, '2026-11-09 12:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 3   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 2 FROM bookings\n"
+    },
+    {
+      "name": "another room's booking does not block",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: another room's booking does not block\ncall: book_room(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 3   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: expected state: SELECT count(*) = 2 FROM bookings\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two overlapping requests for the same room",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 14,
+      "dfs_schedules": 14,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.42,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "back-to-back requests for the same room",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 20,
+      "dfs_schedules": 20,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.55,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "same time in two different rooms",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 20,
+      "dfs_schedules": 20,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.56,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 1.92,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "cli": "antigravity",
+    "model_id": "gemini-3.8-flash-high",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "cli_version": "1.5.3",
+    "date_utc": "2026-11-07T12:52:11+00:00",
+    "finish_reason": "SUCCESS",
+    "completion_tokens": 42886,
+    "prompt_tokens": 25023,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": null,
+    "seconds": 298.45,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "Google sign-in (agy --print)",
+    "thinking_tokens": 42546,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

@@ -1,6 +1,6 @@
 {
   "task_id": "t07_node_drain",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_2/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_2/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.01,
+      "seconds": 1.41,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -59,10 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.03,
+      "seconds": 1.37,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -78,10 +84,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.62,
+      "seconds": 9.94,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -94,7 +103,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 8.84,
+  "seconds": 12.95,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -107,5 +116,6 @@
     "cost_usd": 0.0,
     "seconds": 172.98,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

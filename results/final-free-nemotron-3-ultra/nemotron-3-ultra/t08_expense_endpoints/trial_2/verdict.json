@@ -1,6 +1,6 @@
 {
   "task_id": "t08_expense_endpoints",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t08_expense_endpoints/trial_2/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t08_expense_endpoints/trial_2/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -76,10 +76,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.36,
+      "seconds": 8.79,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -95,10 +98,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.29,
+      "seconds": 3.17,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -114,10 +120,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.41,
+      "seconds": 3.27,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -133,10 +142,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 5.29,
+      "seconds": 7.24,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a raise that both fit",
@@ -152,10 +164,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.72,
+      "seconds": 9.91,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -171,10 +186,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.36,
+      "seconds": 3.41,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -190,10 +208,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 21.53,
+      "seconds": 33.2,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -206,7 +227,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 47.51,
+  "seconds": 69.69,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -219,5 +240,6 @@
     "cost_usd": 0.0,
     "seconds": 117.42,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

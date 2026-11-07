@@ -150,6 +150,18 @@ def test_two_requests_of_three_steps_have_20_interleavings(explorer):
     assert len({r.choices for r in result.results}) == len(result.results)
 
 
+def test_exactly_the_two_serial_orders_are_serial_and_run_order_reproduces_them(explorer):
+    ex = explorer([short_tx, short_tx], [])
+    result = ex.explore()
+    serial = sorted(r.serial_order for r in result.results if r.serial_order is not None)
+    assert serial == [(0, 1), (1, 0)], "of 20 interleavings, only R1;R2 and R2;R1 keep each request in one block"
+    assert result.results[0].serial_order == (0, 1), "depth-first search starts with the serial R1;R2"
+    for order in [(0, 1), (1, 0)]:
+        r = ex.run(order=order)
+        assert r.serial_order == order
+        assert [req for _, req, _ in r.grants] == [order[0]] * 3 + [order[1]] * 3
+
+
 def test_three_autocommit_requests_have_90_interleavings(explorer):
     def one_select(db):  # statement + its implicit COMMIT = 2 steps
         db.execute("SELECT 1")

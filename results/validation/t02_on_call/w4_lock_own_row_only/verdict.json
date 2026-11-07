@@ -42,10 +42,13 @@
       "counterexamples": [
         "scenario: two on call, both ask to leave\nR1: go_off_call(db, doctor_id=1)\nR2: go_off_call(db, doctor_id=2)\nschedule choices: [0, 0, 0, 0, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT shift_id FROM doctors WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 3   R1  SELECT count(*) FROM doctors WHERE shift_id = 1 AND on_call -> [(2,)]\nstep 4   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT shift_id FROM doctors WHERE id = 2 FOR UPDATE -> [(1,)]\nstep 7   R2  SELECT count(*) FROM doctors WHERE shift_id = 1 AND on_call -> [(2,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  UPDATE doctors SET on_call = false WHERE id = 2 -> UPDATE 1\nstep 10  R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: every shift has at least one doctor on call  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 11.88,
+      "seconds": 18.14,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "three on call, two ask to leave",
@@ -61,10 +64,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.4,
+      "seconds": 9.79,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "one leaves from each of two shifts",
@@ -80,10 +86,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.51,
+      "seconds": 11.8,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -96,6 +105,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 25.0,
+  "seconds": 39.97,
+  "warnings": [],
   "failure_category": "concurrency"
 }

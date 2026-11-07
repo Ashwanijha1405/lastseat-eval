@@ -1,6 +1,6 @@
 {
   "task_id": "t04_room_booking",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_1/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_1/solution.py",
   "status": "load_error",
   "load_error": "migrate_error",
   "load_detail": "UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist\nLINE 6:             tsrange(starts_at, ends_at) WITH &&\n                    ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.",
@@ -17,7 +17,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.06,
+  "seconds": 0.09,
   "warnings": [],
   "failure_category": "load",
   "api": {
@@ -30,5 +30,6 @@
     "cost_usd": 0.0,
     "seconds": 54.5,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

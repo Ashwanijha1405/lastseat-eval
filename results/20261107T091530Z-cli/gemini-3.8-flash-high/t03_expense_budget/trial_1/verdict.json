@@ -52,10 +52,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.46,
+      "seconds": 5.77,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "one already approved, two approvals that do not both fit",
@@ -71,10 +74,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.24,
+      "seconds": 5.65,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two approvals that both fit",
@@ -90,10 +96,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 5.14,
+      "seconds": 6.7,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approvals in two different departments",
@@ -109,10 +118,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 28.74,
+      "seconds": 36.93,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -125,7 +137,8 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 42.99,
+  "seconds": 55.45,
+  "warnings": [],
   "failure_category": null,
   "api": {
     "source": "official-cli",
@@ -148,5 +161,6 @@
     "thinking_tokens": 35657,
     "tool_calls_denied": 1,
     "tool_calls_ran": []
-  }
+  },
+  "regraded_from_disk": true
 }

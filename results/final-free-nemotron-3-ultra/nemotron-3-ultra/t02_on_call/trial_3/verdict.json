@@ -1,6 +1,6 @@
 {
   "task_id": "t02_on_call",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t02_on_call/trial_3/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t02_on_call/trial_3/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 16.93,
+      "seconds": 25.53,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "three on call, two ask to leave",
@@ -59,10 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 17.42,
+      "seconds": 28.24,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "one leaves from each of two shifts",
@@ -78,10 +84,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 65.58,
+      "seconds": 90.82,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -94,7 +103,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 100.14,
+  "seconds": 144.89,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -107,5 +116,6 @@
     "cost_usd": 0.0,
     "seconds": 209.84,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

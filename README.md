@@ -68,13 +68,15 @@ The official-CLI route is wired in `run.ps1` only. On Linux/macOS run its three 
 <!-- BEGIN report:runtime -->
 | model | new calls in the final run (reused pilot trials excluded) | model time per answer (median s) | grading time (total s) | schedules explored | scenarios not exhaustive | spent (USD) |
 |---|---|---|---|---|---|---|
-| `claude-opus-5-5` | 15 | 18 | 1258 | 40436 | 5 of 144 | 0.00 |
-| `claude-sonnet-5-5` | 30 | 12 | 1458 | 49127 | 7 of 144 | 0.00 |
-| `claude-haiku-5-5` | 30 | 25 | 1279 | 36530 | 4 of 144 | 0.00 |
-| `gemini-3.8-flash-high` | 19 | 335 | 576 | 17570 | 0 of 132 | 0.00 |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 30 | 119 | 1812 | 49834 | 14 of 109 | 0.00 |
+| `claude-opus-5-5` | 15 | 18 | 1713 | 40436 | 5 of 144 | 0.00 |
+| `claude-sonnet-5-5` | 30 | 12 | 2096 | 49127 | 7 of 144 | 0.00 |
+| `claude-haiku-5-5` | 30 | 25 | 1549 | 36530 | 4 of 144 | 0.00 |
+| `gemini-3.8-flash-high` | 19 | 335 | 739 | 17570 | 0 of 132 | 0.00 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 30 | 119 | 2373 | 49834 | 14 of 109 | 0.00 |
 
-Grader validation (`make validate`, 53 solutions): 21 min of grading time on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11).
+Grading times are from the latest re-grade from disk (every run, 4 grading jobs at a time on one machine), so they include contention between jobs; schedules and scores do not depend on timing.
+
+Grader validation (`make validate`, 53 solutions): 30 min of grading time on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11).
 <!-- END report:runtime -->
 
 ## 5. Models tested
@@ -208,7 +210,7 @@ Every failed final-run trial, with its category and files:
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t09_room_rules · trial_1: **spec** — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/verdict.json), [counterexample 1](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_1/counterexample_1.txt)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t09_room_rules · trial_2: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone, unknown) does not exis…` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t09_room_rules/trial_2/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t10_room_rules_scaled · trial_1: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_1/verdict.json)
-- `nvidia/nemotron-3-ultra-550b-a55b:free` · t10_room_rules_scaled · trial_3: **concurrency** — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/verdict.json), [counterexample 1](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_1.txt), [counterexample 2](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_2.txt), [counterexample 3](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_3.txt)
+- `nvidia/nemotron-3-ultra-550b-a55b:free` · t10_room_rules_scaled · trial_3: **spec** — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/verdict.json), [counterexample 1](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_1.txt), [counterexample 2](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_2.txt), [counterexample 3](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_3.txt)
 
 Warnings (not scored):
 
@@ -218,7 +220,26 @@ Warnings (not scored):
 - `gemini-3.8-flash-high` · t10_room_rules_scaled · trial_2: `latent_api_error` `psycopg.errors.TransactionRollbackError` (line 8) — [solution](results/final-gemini-3.8-flash-high-cli/gemini-3.8-flash-high/t10_room_rules_scaled/trial_2/solution.py)
 <!-- END report:failures -->
 
-Categories: **load** = never graded (syntax, import, missing function, `migrate_error`, `forbidden_migrate`, no code); **concurrency** = an invariant broke in some schedule, or a valid request failed or waited (liveness); **spec** = wrong when run alone (a solo check failed) with no unsafe schedule; **harness** = the grader failed.
+**Concurrency failures seen outside the final runs.** This is a genuine race, but it happened in an extra pilot run. That run was started by accident and kept by decision; see the note in its [summary](results/20261107T001717Z/summary.md). It is **not** counted in the final results above.
+
+<!-- BEGIN report:pilot_concurrency -->
+- `nvidia/nemotron-3-ultra-550b-a55b:free` · t03_expense_budget · run `20261107T001717Z` (extra pilot run, not part of the final results): **concurrency**; 14/24 schedules unsafe in "nothing approved yet, two approvals that do not both fit", 0 of 2 serial; 14/24 schedules unsafe in "one already approved, two approvals that do not both fit", 0 of 2 serial — [verdict](results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/verdict.json), [counterexample 1](results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/counterexample_1.txt), [counterexample 2](results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/counterexample_2.txt)
+  - All attempts by this model on t03_expense_budget: 5 (`20261106T123821Z`, `20261107T001717Z`, `final-free-nemotron-3-ultra`), 1 failed.
+<!-- END report:pilot_concurrency -->
+
+In the Nemotron t03 pilot, `approve_expense` locks the department row (`FOR UPDATE OF d`) in the same statement that reads the approved total, `SELECT … (SELECT SUM(amount) … status = 'approved')`.
+
+Under READ COMMITTED, a second approval waits on that lock. When the first one commits, Postgres re-checks only the locked department row (the READ COMMITTED re-check). The `SUM` subquery keeps the statement's original snapshot, so the second approval still sees 0 approved. Both commit, and the department goes over budget.
+
+Either request alone, or both run one after the other, is fine. The bug needs the two to overlap.
+
+Categories:
+- **load**: never graded (syntax, import, missing function, `migrate_error`, `forbidden_migrate`, no code).
+- **spec**: a logic bug that shows without any concurrency. Either a solo check failed, or a *serial* schedule broke an invariant or liveness. A serial schedule runs one request completely before the next starts; every scenario has two requests, so both orders are checked.
+- **concurrency**: correct alone and in both serial orders, but some interleaved schedule broke an invariant, or a valid request failed or waited (liveness).
+- **harness**: the grader failed.
+
+The grader finds serial schedules among the explored ones: a schedule is serial when each request's statements form one unbroken block. An exhaustive search contains both orders. When the search is capped, an order it missed is run separately; that run decides the category only and is not counted in schedules or scores.
 
 ## 8. Main failure mode + hot take
 

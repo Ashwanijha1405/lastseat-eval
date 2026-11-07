@@ -42,10 +42,13 @@
       "counterexamples": [
         "scenario: two buyers, only one can win\nR1: purchase(db, product_id=1, qty=3)\nR2: purchase(db, product_id=1, qty=3)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT stock FROM products WHERE id = 1 -> [(5,)]\nstep 3   R1  UPDATE products SET stock = 2 WHERE id = 1 -> UPDATE 1\nstep 4   R1  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT stock FROM products WHERE id = 1 -> [(5,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE products SET stock = 2 WHERE id = 1 -> UPDATE 1\nstep 9   R2  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 10  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: stock never negative\nINVARIANT VIOLATED: stock is conserved (started at 5)  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 4.81,
+      "seconds": 7.61,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two buyers, both fit",
@@ -63,10 +66,13 @@
       "counterexamples": [
         "scenario: two buyers, both fit\nR1: purchase(db, product_id=1, qty=3)\nR2: purchase(db, product_id=1, qty=3)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT stock FROM products WHERE id = 1 -> [(6,)]\nstep 3   R1  UPDATE products SET stock = 3 WHERE id = 1 -> UPDATE 1\nstep 4   R1  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT stock FROM products WHERE id = 1 -> [(6,)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE products SET stock = 3 WHERE id = 1 -> UPDATE 1\nstep 9   R2  INSERT INTO orders (product_id, qty) VALUES (1, 3) -> INSERT 0 1\nstep 10  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: stock never negative\nINVARIANT VIOLATED: stock is conserved (started at 6)  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 5.13,
+      "seconds": 8.3,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -79,6 +85,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 10.15,
+  "seconds": 16.16,
+  "warnings": [],
   "failure_category": "concurrency"
 }

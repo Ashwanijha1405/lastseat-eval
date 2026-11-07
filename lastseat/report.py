@@ -161,6 +161,49 @@ def failures_section(runs: list[dict]) -> str:
     return "\n".join(out) or "No failures."
 
 
+def _attempts() -> list[tuple[Path, dict, str, str, Path, dict]]:
+    """Every answered trial of every real run (dry runs left out), each counted
+    once: a trial a final run reused from a pilot is counted in the pilot only.
+    (run dir, run meta, model slug, task, trial dir, verdict)."""
+    out = []
+    for meta_file in sorted(RESULTS.glob("*/run_meta.json")):
+        meta = _load(meta_file)
+        if meta.get("dry_run"):
+            continue
+        run = meta_file.parent
+        reused = set(meta.get("reused", {}))
+        for v_file in sorted(run.glob("*/*/trial_*/verdict.json")):
+            d = v_file.parent
+            if f"{d.parent.name}/{d.name}" in reused:
+                continue
+            out.append((run, meta, d.parent.parent.name, d.parent.name, d, _load(v_file)))
+    return out
+
+
+def pilot_concurrency_section() -> str:
+    """Concurrency failures seen only outside the final runs, with how often that
+    model failed that task over all its attempts (pilots and final)."""
+    attempts = _attempts()
+    out = []
+    for run, meta, slug, task, d, v in attempts:
+        if run.name.startswith("final-") or v.get("failure_category") != "concurrency":
+            continue
+        model_id = next((m["id"] for m in meta["models"] if m["slug"] == slug), slug)
+        same = [(r, x) for r, _, s, t, _, x in attempts if s == slug and t == task]
+        failed = [(r, x) for r, x in same if not x.get("passed")]
+        runs = ", ".join(f"`{r.name}`" for r in dict.fromkeys(r for r, _ in same))
+        links = [f"[verdict]({_rel(d / 'verdict.json')})"]
+        links += [f"[counterexample {i}]({_rel(f)})" for i, f in enumerate(sorted(d.glob("counterexample_*.txt")), 1)]
+        unsafe = [s for s in v.get("scenarios") or [] if not s.get("safe")]
+        out.append(f"- `{model_id}` · {task} · run `{run.name}` (extra pilot run, not part of the final results): "
+                   f"**concurrency**; " + "; ".join(f"{s['unsafe_schedules']}/{s['schedules']} schedules unsafe in "
+                                                    f"\"{s['name']}\", {s['serial_unsafe']} of {s['serial_schedules']} "
+                                                    "serial" for s in unsafe)
+                   + " — " + ", ".join(links))
+        out.append(f"  - All attempts by this model on {task}: {len(same)} ({runs}), {len(failed)} failed.")
+    return "\n".join(out) or "None."
+
+
 _ROW = re.compile(r"^\| (t\d\d\w*) \| `([^`]+)` \| ([^|]+) \|.*\| ([^|]+) \|$")
 
 
@@ -210,6 +253,9 @@ def runtime_section(runs: list[dict]) -> str:
         out.append(f"| `{r['model']['id']}` | {calls} | {med:.0f} | {sum(v.get('seconds', 0) for v in graded):.0f} | "
                    f"{sum(s['schedules'] for s in scs)} | {sum(1 for s in scs if not s.get('exhaustive'))} of {len(scs)} | "
                    f"{meta.get('spent_usd', 0):.2f} |")
+    if any(v.get("regraded_from_disk") for r in runs for _, v in r["trials"].values() if v):
+        out += ["", "Grading times are from the latest re-grade from disk (every run, 4 grading jobs at a time on "
+                "one machine), so they include contention between jobs; schedules and scores do not depend on timing."]
     vs = [_load(p) for p in RESULTS.glob("validation/*/*/verdict.json") if not p.parent.name.startswith("alt_")]
     out += ["", f"Grader validation (`make validate`, {len(vs)} solutions): "
             f"{sum(v.get('seconds', 0) for v in vs) / 60:.0f} min of grading time on the machine that produced these results "
@@ -220,7 +266,8 @@ def runtime_section(runs: list[dict]) -> str:
 def sections() -> dict[str, str]:
     runs = final_runs()
     return {"models": models_section(runs), "results": results_section(runs),
-            "failures": failures_section(runs), "validation": validation_section(),
+            "failures": failures_section(runs), "pilot_concurrency": pilot_concurrency_section(),
+            "validation": validation_section(),
             "runtime": runtime_section(runs)}
 
 

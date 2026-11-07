@@ -1,6 +1,6 @@
 {
   "task_id": "t06_idempotent_payment",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t06_idempotent_payment/trial_2/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t06_idempotent_payment/trial_2/solution.py",
   "status": "load_error",
   "load_error": "migrate_error",
   "load_detail": "SyntaxError: syntax error at or near \"NOT\"\nLINE 1: ALTER TABLE payments ADD CONSTRAINT IF NOT EXISTS payments_i...\n                                               ^",
@@ -30,5 +30,6 @@
     "cost_usd": 0.0,
     "seconds": 84.67,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

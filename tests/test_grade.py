@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from lastseat.grade import VACUOUS_SAFETY, grade
 from lastseat.task import TASKS_DIR, load_task
 
@@ -155,9 +157,11 @@ from lastseat.grade import failure_category  # noqa: E402
 SAFE = {"safe": True, "live": True}
 
 
-def graded(solo_ok=True, safe=True, live=True):
+def graded(solo_ok=True, safe=True, live=True, serial_unsafe=0, serial_unlive=0):
+    serial = {"serial_schedules": 2, "serial_unsafe": 0, "serial_unlive": 0}
     return {"status": "graded", "passed": False, "solo": [{"passed": solo_ok}],
-            "scenarios": [{"safe": safe, "live": live}, SAFE]}
+            "scenarios": [{"safe": safe, "live": live, **serial, "serial_unsafe": serial_unsafe,
+                           "serial_unlive": serial_unlive}, {**SAFE, **serial}]}
 
 
 def test_failure_categories():
@@ -165,11 +169,94 @@ def test_failure_categories():
     assert failure_category({"status": "load_error", "load_error": "forbidden_migrate"}) == "load"
     assert failure_category({"status": "load_error", "load_error": "no_code"}) == "load"
     assert failure_category({"status": "harness_error"}) == "harness"
-    assert failure_category(graded(safe=False)) == "concurrency"
-    assert failure_category(graded(solo_ok=False, safe=False)) == "concurrency", "a real counterexample wins"
+    assert failure_category(graded(safe=False)) == "concurrency", "only interleaved schedules fail"
+    assert failure_category(graded(live=False)) == "concurrency"
+    assert failure_category(graded(safe=False, serial_unsafe=1)) == "spec", "fails even one after another"
+    assert failure_category(graded(live=False, serial_unlive=1)) == "spec"
+    assert failure_category(graded(solo_ok=False, safe=False)) == "spec", "wrong when run alone"
     assert failure_category(graded(solo_ok=False)) == "spec"
     assert failure_category(graded(solo_ok=False, live=False)) == "spec", "e.g. every call raises"
-    assert failure_category(graded(live=False)) == "concurrency"
+
+
+def test_a_verdict_without_serial_counts_is_refused_not_guessed():
+    old = {"status": "graded", "passed": False, "solo": [{"passed": True}], "scenarios": [{"name": "x", "safe": False}]}
+    with pytest.raises(ValueError, match="re-grade"):
+        failure_category(old)
+
+
+def test_a_racy_lost_update_is_a_concurrency_failure(tmp_path):
+    v = grade(_two_fn_task(tmp_path), DEPOSIT + RACY_WITHDRAW)
+    [sc] = v.scenarios
+    assert all(s.passed for s in v.solo) and not sc.safe
+    assert (sc.serial_schedules, sc.serial_unsafe, sc.serial_unlive) == (2, 0, 0), "fine one after another"
+    assert failure_category(json.loads(v.to_json())) == "concurrency"
+
+
+def test_a_capped_search_runs_the_missing_serial_order_without_counting_it(tmp_path):
+    v = grade(_two_fn_task(tmp_path), DEPOSIT + RACY_WITHDRAW, max_schedules=1, random_schedules=0)
+    [sc] = v.scenarios
+    assert sc.schedules == 1 and not sc.exhaustive, "only R1;R2 was explored"
+    assert sc.serial_schedules == 2, "R2;R1 was run separately"
+    assert sc.safe and v.passed, "the race is not in the one explored schedule; the extra run does not score"
+
+
+# A per-event counter row, created by migrate() and never backfilled from the rows
+# already there: locking is correct, but the count starts at 0 instead of 2, so it
+# lets a 4th seat in even when the requests run one after the other.
+SEATS_SPEC = """id: t98_seats
+title: At most 3 seats per event
+entrypoints: [take]
+signature: "take(db, event_id: int) -> bool"
+seed_state_sql: ""
+invariants:
+  - name: at most 3 seats per event
+    sql: SELECT coalesce(bool_and(n <= 3), true) FROM (SELECT count(*) AS n FROM seats GROUP BY event_id) c
+solo_checks:
+  - name: a seat at an empty event is taken
+    call: {fn: take, args: {event_id: 1}}
+    expect_return: true
+    expect_sql: SELECT count(*) = 1 FROM seats
+concurrent_scenarios:
+  - name: two requests for the last seat
+    seed_sql: INSERT INTO seats (event_id) VALUES (1), (1);
+    requests:
+      - {fn: take, args: {event_id: 1}}
+      - {fn: take, args: {event_id: 1}}
+    must_all_succeed: false
+"""
+SEATS_SETUP = "CREATE TABLE seats (id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY, event_id int NOT NULL);\n"
+COUNTER_WITHOUT_BACKFILL = '''
+def migrate(db):
+    db.execute("CREATE TABLE seat_counts (event_id int PRIMARY KEY, n int NOT NULL)")
+    db.execute("INSERT INTO seat_counts VALUES (1, 0)")
+    db.commit()
+
+
+def take(db, event_id):
+    db.begin("read committed")
+    [(n,)] = db.execute("SELECT n FROM seat_counts WHERE event_id = %s FOR UPDATE", (event_id,))
+    if n >= 3:
+        db.rollback()
+        return False
+    db.execute("INSERT INTO seats (event_id) VALUES (%s)", (event_id,))
+    db.execute("UPDATE seat_counts SET n = n + 1 WHERE event_id = %s", (event_id,))
+    db.commit()
+    return True
+'''
+
+
+def test_a_counter_without_backfill_is_a_spec_failure(tmp_path):
+    d = tmp_path / "t98_seats"
+    d.mkdir()
+    (d / "spec.yaml").write_text(SEATS_SPEC, encoding="utf-8")
+    (d / "setup.sql").write_text(SEATS_SETUP, encoding="utf-8")
+    (d / "task.md").write_text("Write take.\n\n" + SEATS_SETUP, encoding="utf-8")
+    v = grade(load_task(d), COUNTER_WITHOUT_BACKFILL)
+    [sc] = v.scenarios
+    assert all(s.passed for s in v.solo), "the solo check starts from an empty table, so it cannot see the bug"
+    assert not sc.safe and sc.unsafe_schedules == sc.schedules, "every schedule lets a 4th seat in"
+    assert (sc.serial_schedules, sc.serial_unsafe) == (2, 2), "including both serial ones"
+    assert failure_category(json.loads(v.to_json())) == "spec"
 
 
 def test_verdict_json_carries_the_category():

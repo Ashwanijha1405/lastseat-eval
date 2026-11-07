@@ -1,0 +1,32 @@
+{
+  "task_id": "t09_room_rules",
+  "solution": "/app/results/20261107T001717Z/nemotron-3-ultra/t09_room_rules/trial_1/solution.py",
+  "status": "load_error",
+  "load_error": "migrate_error",
+  "load_detail": "UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist\nLINE 3:         EXCLUDE USING gist (room_id WITH =, tsrange(starts_a...\n                                                    ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.07,
+  "failure_category": "load",
+  "api": {
+    "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "served_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "provider": "Nvidia",
+    "finish_reason": "stop",
+    "prompt_tokens": 1565,
+    "completion_tokens": 13435,
+    "cost_usd": 0.0,
+    "seconds": 362.9,
+    "attempts": 1
+  }
+}

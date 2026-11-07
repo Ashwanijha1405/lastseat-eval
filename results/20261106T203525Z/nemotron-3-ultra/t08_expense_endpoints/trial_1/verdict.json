@@ -1,6 +1,6 @@
 {
   "task_id": "t08_expense_endpoints",
-  "solution": "/app/results/20261106T203525Z/nemotron-3-ultra/t08_expense_endpoints/trial_1/solution.py",
+  "solution": "results/20261106T203525Z/nemotron-3-ultra/t08_expense_endpoints/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -76,7 +76,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 9.48
+      "seconds": 14.2,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -92,7 +98,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.7
+      "seconds": 3.84,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -108,7 +120,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.76
+      "seconds": 3.57,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -124,7 +142,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.91
+      "seconds": 9.22,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a raise that both fit",
@@ -140,7 +164,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 9.91
+      "seconds": 13.56,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -156,7 +186,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.88
+      "seconds": 3.77,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -172,7 +208,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 34.57
+      "seconds": 52.06,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -182,9 +224,11 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 69.73,
+  "seconds": 100.91,
+  "warnings": [],
   "failure_category": null,
   "api": {
     "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -196,5 +240,6 @@
     "cost_usd": 0.0,
     "seconds": 289.93,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

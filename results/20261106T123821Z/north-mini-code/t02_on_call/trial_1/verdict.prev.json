@@ -1,0 +1,32 @@
+{
+  "task_id": "t02_on_call",
+  "solution": "/app/results/20261106T123821Z/north-mini-code/t02_on_call/trial_1/solution.py",
+  "status": "load_error",
+  "load_error": "syntax_error",
+  "load_detail": "line 43: unterminated string literal (detected at line 43)",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.0,
+  "failure_category": "load",
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "stop",
+    "prompt_tokens": 1065,
+    "completion_tokens": 17303,
+    "cost_usd": 0.0,
+    "seconds": 103.71,
+    "attempts": 1
+  }
+}

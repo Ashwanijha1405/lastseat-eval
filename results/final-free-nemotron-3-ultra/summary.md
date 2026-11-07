@@ -13,11 +13,11 @@
 | t07_node_drain | trial_1: FAIL [load] (forbidden_import) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: FAIL [spec] (vacuous_safety) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>**pass^3: no** |
 | t08_expense_endpoints | trial_1: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: yes** |
 | t09_room_rules | trial_1: FAIL [spec] 0.75 (sa 0.50 / so 0.00 / li 0.25)<br>trial_2: FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>trial_3: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>**pass^3: no** |
-| t10_room_rules_scaled | trial_1: FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: FAIL [concurrency] 0.25 (sa 0.00 / so 0.00 / li 0.25)<br>**pass^3: no** |
+| t10_room_rules_scaled | trial_1: FAIL [load] (migrate_error) 0.00 (sa 0.00 / so 0.00 / li 0.00)<br>trial_2: PASS 1.00 (sa 0.50 / so 0.25 / li 0.25)<br>trial_3: FAIL [spec] 0.25 (sa 0.00 / so 0.00 / li 0.25)<br>**pass^3: no** |
 
-- nemotron-3-ultra: 20/30 passed, mean score 0.700; failures: load 7, spec 2, concurrency 1
+- nemotron-3-ultra: 20/30 passed, mean score 0.700; failures: load 7, spec 3
 
-Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe schedule; **harness** = the grader failed.
+Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **spec** = a logic bug that shows without concurrency: a solo check failed, or a serial schedule (one request finished before the next started) broke an invariant or liveness; **concurrency** = correct alone and in every serial order, but an interleaved schedule broke an invariant or liveness; **harness** = the grader failed.
 
 ## Failures
 
@@ -59,8 +59,8 @@ LINE 1: ALTER TABLE payments ADD CONSTRAINT IF NOT EXISTS payments_i...
 - solo FAIL: drain is refused if any shard would lose its last replica, and nothing changes: raised SyntaxError (42601): syntax error at or near "ORDER"
 - solo FAIL: shards without an active replica on the node do not block it: raised SyntaxError (42601): syntax error at or near "ORDER"; violated: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas
  (got [(False,)])
-- scenario `two drains of nodes sharing several shards, both fit`: status ok, safe=True (0 unsafe), live=False (20 unlive) of 20 schedules, exhaustive=True, reproduced=True
-- scenario `two drains of nodes with no shared shard`: status ok, safe=True (0 unsafe), live=False (20 unlive) of 20 schedules, exhaustive=True, reproduced=True
+- scenario `two drains of nodes sharing several shards, both fit`: status ok, safe=True (0 unsafe), live=False (20 unlive) of 20 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 2 unlive of 2
+- scenario `two drains of nodes with no shared shard`: status ok, safe=True (0 unsafe), live=False (20 unlive) of 20 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 2 unlive of 2
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/counterexample_1.txt`
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/counterexample_2.txt`
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/counterexample_3.txt`
@@ -84,14 +84,14 @@ LINE 6:             tsrange(starts_at, ends_at) WITH &&
                     ^
 HINT:  No function matches the given name and argument types. You might need to add explicit type casts.`
 
-### nemotron-3-ultra / t10_room_rules_scaled / trial_3: concurrency
+### nemotron-3-ultra / t10_room_rules_scaled / trial_3: spec
 - status `graded`, load_error `None`, safety_reason `None`, liveness_reason `None`, finish_reason `stop`, completion_tokens 8006
 - solo FAIL: a fourth booking on the same day is refused cleanly: returned True, expected False; violated: no room has more than 3 bookings on a UTC day (got [(False,)]); violated: expected state: SELECT count(*) = 3 FROM bookings (got [(False,)])
 - solo FAIL: the day is the UTC day, whatever offset the time is given in: returned True, expected False; violated: no room has more than 3 bookings on a UTC day (got [(False,)]); violated: expected state: SELECT count(*) = 3 FROM bookings (got [(False,)])
 - solo FAIL: a move into a full day is refused cleanly: returned True, expected False; violated: no room has more than 3 bookings on a UTC day (got [(False,)]); violated: expected state: SELECT starts_at = '2026-11-09T09:00:00Z' FROM bookings WHERE id = 1 (got [(False,)])
-- scenario `two bookings for the last place of a day`: status ok, safe=False (84 unsafe), live=True (0 unlive) of 84 schedules, exhaustive=True, reproduced=True
-- scenario `a move from another day and a booking, for the last place of a day`: status ok, safe=False (571 unsafe), live=True (0 unlive) of 571 schedules, exhaustive=True, reproduced=True
-- scenario `two moves from different days, for the last place of a day`: status ok, safe=False (2200 unsafe), live=True (0 unlive) of 2200 schedules, exhaustive=False, reproduced=True
+- scenario `two bookings for the last place of a day`: status ok, safe=False (84 unsafe), live=True (0 unlive) of 84 schedules, exhaustive=True, reproduced=True; serial: 2 unsafe, 0 unlive of 2
+- scenario `a move from another day and a booking, for the last place of a day`: status ok, safe=False (571 unsafe), live=True (0 unlive) of 571 schedules, exhaustive=True, reproduced=True; serial: 2 unsafe, 0 unlive of 2
+- scenario `two moves from different days, for the last place of a day`: status ok, safe=False (2200 unsafe), live=True (0 unlive) of 2200 schedules, exhaustive=False, reproduced=True; serial: 2 unsafe, 0 unlive of 2
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_1.txt`
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_2.txt`
 - counterexample: `results/final-free-nemotron-3-ultra/nemotron-3-ultra/t10_room_rules_scaled/trial_3/counterexample_3.txt`

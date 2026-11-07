@@ -1,0 +1,152 @@
+{
+  "task_id": "t03_expense_budget",
+  "solution": "results/20261107T091530Z-cli/gemini-3.8-flash-high/t03_expense_budget/trial_3/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "approval within budget succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval within budget succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock(department_id::bigint) FROM expenses WHERE id = 2 -> [('',)]\nstep 3   R1  SELECT e.status, e.amount, d.budget, COALESCE(( SELECT SUM(amount) FROM expenses WHERE department_id = e.department_id AND status = 'approved' ), 0) AS total_approved FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 -> [('pending', 40, 100, 30)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval reaching the budget exactly succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval reaching the budget exactly succeeds\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock(department_id::bigint) FROM expenses WHERE id = 2 -> [('',)]\nstep 3   R1  SELECT e.status, e.amount, d.budget, COALESCE(( SELECT SUM(amount) FROM expenses WHERE department_id = e.department_id AND status = 'approved' ), 0) AS total_approved FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 -> [('pending', 70, 100, 30)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,approved}' FROM expenses\n"
+    },
+    {
+      "name": "approval over budget is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: approval over budget is refused cleanly\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock(department_id::bigint) FROM expenses WHERE id = 2 -> [('',)]\nstep 3   R1  SELECT e.status, e.amount, d.budget, COALESCE(( SELECT SUM(amount) FROM expenses WHERE department_id = e.department_id AND status = 'approved' ), 0) AS total_approved FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 -> [('pending', 71, 100, 30)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT array_agg(status ORDER BY id) = '{approved,pending}' FROM expenses\n"
+    },
+    {
+      "name": "an expense that is not pending is refused",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: an expense that is not pending is refused\ncall: approve_expense(db, expense_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock(department_id::bigint) FROM expenses WHERE id = 1 -> [('',)]\nstep 3   R1  SELECT e.status, e.amount, d.budget, COALESCE(( SELECT SUM(amount) FROM expenses WHERE department_id = e.department_id AND status = 'approved' ), 0) AS total_approved FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 1 -> [('rejected', 10, 100, 0)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'rejected' FROM expenses WHERE id = 1\n"
+    },
+    {
+      "name": "other departments' approvals do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: other departments' approvals do not count\ncall: approve_expense(db, expense_id=2)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT pg_advisory_xact_lock(department_id::bigint) FROM expenses WHERE id = 2 -> [('',)]\nstep 3   R1  SELECT e.status, e.amount, d.budget, COALESCE(( SELECT SUM(amount) FROM expenses WHERE department_id = e.department_id AND status = 'approved' ), 0) AS total_approved FROM expenses e JOIN departments d ON d.id = e.department_id WHERE e.id = 2 -> [('pending', 60, 100, 0)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 AND status = 'pending' -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no department's approved total exceeds its budget\ninvariant ok: expected state: SELECT status = 'approved' FROM expenses WHERE id = 2\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "nothing approved yet, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.05,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "one already approved, two approvals that do not both fit",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.14,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two approvals that both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.59,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "approvals in two different departments",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 252,
+      "dfs_schedules": 252,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 7.47,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 11.72,
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "cli": "antigravity",
+    "model_id": "gemini-3.8-flash-high",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "cli_version": "1.5.3",
+    "date_utc": "2026-11-07T09:37:20+00:00",
+    "finish_reason": "SUCCESS",
+    "completion_tokens": 41983,
+    "prompt_tokens": 45347,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": null,
+    "seconds": 319.95,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "Google sign-in (agy --print)",
+    "thinking_tokens": 41422,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

@@ -1,6 +1,6 @@
 {
   "task_id": "t01_flash_sale",
-  "solution": "/app/results/20261106T123821Z/north-mini-code/t01_flash_sale/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/north-mini-code/t01_flash_sale/trial_1/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,7 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.79
+      "seconds": 0.91,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two buyers, both fit",
@@ -56,7 +62,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.74
+      "seconds": 0.98,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -66,9 +78,11 @@
     "total": 1.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 1.71,
+  "seconds": 2.13,
+  "warnings": [],
   "failure_category": null,
   "api": {
     "model_id": "cohere/north-mini-code:free",
@@ -80,5 +94,6 @@
     "cost_usd": 0.0,
     "seconds": 79.92,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

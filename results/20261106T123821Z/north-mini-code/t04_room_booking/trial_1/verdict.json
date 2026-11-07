@@ -1,6 +1,6 @@
 {
   "task_id": "t04_room_booking",
-  "solution": "/app/results/20261106T123821Z/north-mini-code/t04_room_booking/trial_1/solution.py",
+  "solution": "results/20261106T123821Z/north-mini-code/t04_room_booking/trial_1/solution.py",
   "status": "load_error",
   "load_error": "migrate_error",
   "load_detail": "UndefinedObject: data type integer has no default operator class for access method \"gist\"\nHINT:  You must specify an operator class for the index or define a default operator class for the data type.",
@@ -14,9 +14,11 @@
     "total": 0.0
   },
   "safety_reason": null,
+  "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 0.04,
+  "seconds": 0.06,
+  "warnings": [],
   "failure_category": "load",
   "api": {
     "model_id": "cohere/north-mini-code:free",
@@ -28,5 +30,6 @@
     "cost_usd": 0.0,
     "seconds": 69.61,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

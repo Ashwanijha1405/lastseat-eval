@@ -42,10 +42,13 @@
       "counterexamples": [
         "scenario: two attempts with the same key, only one payment may exist\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned 1\nstep 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned 2\nINVARIANT VIOLATED: at most one payment per idempotency key  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.14,
+      "seconds": 4.63,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two attempts with the same key both get the payment id",
@@ -63,10 +66,13 @@
       "counterexamples": [
         "scenario: two attempts with the same key both get the payment id\nR1: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nR2: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: [0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 3   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(1,)]\nstep 4   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 5   R2  SELECT id FROM payments WHERE idempotency_key = 'order-1001' -> []\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned 1\nstep 7   R2  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) RETURNING id -> INSERT 0 1 [(2,)]\nstep 8   R2  COMMIT -> COMMIT\n         R2  returned 2\nINVARIANT VIOLATED: at most one payment per idempotency key  (got [(False,)])\nSUCCESS CHECK FAILED: one payment exists and both attempts returned its id  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.27,
+      "seconds": 4.3,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two different keys at the same moment",
@@ -82,10 +88,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.85,
+      "seconds": 2.45,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -98,6 +107,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 8.44,
+  "seconds": 11.66,
+  "warnings": [],
   "failure_category": "concurrency"
 }

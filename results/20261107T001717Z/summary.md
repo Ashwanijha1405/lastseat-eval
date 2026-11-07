@@ -2,6 +2,8 @@
 
 > Note: Extra pilot run, not planned. Started by accident on 2026-11-07 00:17 UTC: the scheduled Gemma retry re-ran `pilot -Yes -Jobs 2` expecting to resume 20261106T123821Z, but t08/t09 had been added, so the task list no longer matched and the runner started a new run. It asked Nemotron all 9 tasks (9 free requests, $0) before Gemma was refused (429 rate-limited upstream). Kept by the human's decision as an extra Nemotron trial.
 
+## Source: openrouter
+
 | task | nemotron-3-ultra | gemma-4-31b |
 |---|---|---|
 | t01_flash_sale | PASS 1.00 (sa 0.50 / so 0.25 / li 0.25) | missing (api error) |
@@ -17,26 +19,26 @@
 - nemotron-3-ultra: 6/9 passed, mean score 0.722; failures: concurrency 1, load 2
 - gemma-4-31b: 0/9 passed, mean score 0.000; failures: none
 
-Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **concurrency** = an invariant broke in some schedule, or a request that fits failed (liveness); **spec** = wrong when run alone (a solo check failed), with no unsafe schedule; **harness** = the grader failed.
+Failure categories: **load** = never graded (syntax, import, missing function, migrate_error, forbidden_migrate, no_code); **spec** = a logic bug that shows without concurrency: a solo check failed, or a serial schedule (one request finished before the next started) broke an invariant or liveness; **concurrency** = correct alone and in every serial order, but an interleaved schedule broke an invariant or liveness; **harness** = the grader failed.
 
 ## Failures
 
 ### nemotron-3-ultra / t03_expense_budget / trial_1: concurrency
-- status `graded`, load_error `None`, safety_reason `None`, finish_reason `stop`, completion_tokens 15913
-- scenario `nothing approved yet, two approvals that do not both fit`: status ok, safe=False (14 unsafe), live=True (0 unlive) of 24 schedules, exhaustive=True, reproduced=True
-- scenario `one already approved, two approvals that do not both fit`: status ok, safe=False (14 unsafe), live=True (0 unlive) of 24 schedules, exhaustive=True, reproduced=True
+- status `graded`, load_error `None`, safety_reason `None`, liveness_reason `None`, finish_reason `stop`, completion_tokens 15913
+- scenario `nothing approved yet, two approvals that do not both fit`: status ok, safe=False (14 unsafe), live=True (0 unlive) of 24 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 0 unlive of 2
+- scenario `one already approved, two approvals that do not both fit`: status ok, safe=False (14 unsafe), live=True (0 unlive) of 24 schedules, exhaustive=True, reproduced=True; serial: 0 unsafe, 0 unlive of 2
 - counterexample: `results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/counterexample_1.txt`
 - counterexample: `results/20261107T001717Z/nemotron-3-ultra/t03_expense_budget/trial_1/counterexample_2.txt`
 
 ### nemotron-3-ultra / t04_room_booking / trial_1: load
-- status `load_error`, load_error `migrate_error`, safety_reason `None`, finish_reason `stop`, completion_tokens 3005
+- status `load_error`, load_error `migrate_error`, safety_reason `None`, liveness_reason `None`, finish_reason `stop`, completion_tokens 3005
 - load_detail: `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist
 LINE 5:                     tsrange(starts_at, ends_at) WITH &&
                             ^
 HINT:  No function matches the given name and argument types. You might need to add explicit type casts`
 
 ### nemotron-3-ultra / t09_room_rules / trial_1: load
-- status `load_error`, load_error `migrate_error`, safety_reason `None`, finish_reason `stop`, completion_tokens 13435
+- status `load_error`, load_error `migrate_error`, safety_reason `None`, liveness_reason `None`, finish_reason `stop`, completion_tokens 13435
 - load_detail: `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist
 LINE 3:         EXCLUDE USING gist (room_id WITH =, tsrange(starts_a...
                                                     ^

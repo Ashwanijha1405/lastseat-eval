@@ -1,6 +1,6 @@
 {
   "task_id": "t07_node_drain",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t07_node_drain/trial_3/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -40,10 +40,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 0.56,
+      "seconds": 0.63,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two drains of nodes sharing several shards, both fit",
@@ -61,10 +64,13 @@
       "counterexamples": [
         "scenario: two drains of nodes sharing several shards, both fit\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 5   R2  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.21,
+      "seconds": 1.22,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 2
     },
     {
       "name": "two drains of nodes with no shared shard",
@@ -82,10 +88,13 @@
       "counterexamples": [
         "scenario: two drains of nodes with no shared shard\nR1: drain_node(db, node_id='A')\nR2: drain_node(db, node_id='B')\nschedule choices: [0, 0, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 2   R1  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'A' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 3   R1  ROLLBACK -> ROLLBACK\n         R1  raised SyntaxError (42601): syntax error at or near \"ORDER\"\nstep 4   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN\nstep 5   R2  WITH our_shards AS ( SELECT shard_id FROM replicas WHERE node_id = 'B' AND active = true ) SELECT r.shard_id, r.node_id FROM replicas r JOIN our_shards o ON r.shard_id = o.shard_id WHERE r.active = true FOR UPDATE OF r ORDER BY r.shard_id, r.node_id -> ERROR 42601 SyntaxError: syntax error at or near \"ORDER\"\nstep 6   R2  ROLLBACK -> ROLLBACK\n         R2  raised SyntaxError (42601): syntax error at or near \"ORDER\"\ninvariant ok: every shard has at least one active replica\nSUCCESS CHECK FAILED: A and B fully drained, C still active  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.3,
+      "seconds": 1.33,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 2
     }
   ],
   "scores": {
@@ -98,7 +107,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 3.31,
+  "seconds": 3.41,
   "warnings": [],
   "failure_category": "spec",
   "api": {
@@ -111,5 +120,6 @@
     "cost_usd": 0.0,
     "seconds": 182.17,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }

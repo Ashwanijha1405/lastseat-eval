@@ -50,5 +50,6 @@
     "thinking_tokens": 52557,
     "tool_calls_denied": 1,
     "tool_calls_ran": []
-  }
+  },
+  "regraded_from_disk": true
 }

@@ -1,0 +1,119 @@
+{
+  "task_id": "t02_on_call",
+  "solution": "results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t02_on_call/trial_3/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "leaving while a colleague stays on call succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: leaving while a colleague stays on call succeeds\ncall: go_off_call(db, doctor_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT shift_id FROM doctors WHERE id = 1 -> [(1,)]\nstep 3   R1  SELECT id FROM shifts WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 4   R1  SELECT count(*) FROM doctors WHERE shift_id = 1 AND on_call AND id <> 1 -> [(1,)]\nstep 5   R1  UPDATE doctors SET on_call = false WHERE id = 1 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: every shift has at least one doctor on call\ninvariant ok: expected state: SELECT array_agg(on_call ORDER BY id) = '{f,t}' FROM doctors\n"
+    },
+    {
+      "name": "last doctor on call is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: last doctor on call is refused cleanly\ncall: go_off_call(db, doctor_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT shift_id FROM doctors WHERE id = 1 -> [(1,)]\nstep 3   R1  SELECT id FROM shifts WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 4   R1  SELECT count(*) FROM doctors WHERE shift_id = 1 AND on_call AND id <> 1 -> [(0,)]\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: every shift has at least one doctor on call\ninvariant ok: expected state: SELECT array_agg(on_call ORDER BY id) = '{t,f}' FROM doctors\n"
+    },
+    {
+      "name": "doctors on call in other shifts do not count",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: doctors on call in other shifts do not count\ncall: go_off_call(db, doctor_id=1)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT shift_id FROM doctors WHERE id = 1 -> [(1,)]\nstep 3   R1  SELECT id FROM shifts WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 4   R1  SELECT count(*) FROM doctors WHERE shift_id = 1 AND on_call AND id <> 1 -> [(0,)]\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned False\ninvariant ok: every shift has at least one doctor on call\ninvariant ok: expected state: SELECT array_agg(on_call ORDER BY id) = '{t,t}' FROM doctors\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two on call, both ask to leave",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 148,
+      "dfs_schedules": 148,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.96,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "three on call, two ask to leave",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 148,
+      "dfs_schedules": 148,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 4.9,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "one leaves from each of two shifts",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 924,
+      "dfs_schedules": 924,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 29.11,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 39.19,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "cli": "claude",
+    "model_id": "claude-haiku-5-5",
+    "models_shown": [
+      "claude-haiku-5-5"
+    ],
+    "cli_version": "2.1.319 (Claude Code)",
+    "date_utc": "2026-11-07T14:16:47+00:00",
+    "finish_reason": "end_turn",
+    "completion_tokens": 3370,
+    "prompt_tokens": 2,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": 0.0018157899999999999,
+    "seconds": 17.3,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "claude.ai (claude -p)"
+  }
+}

@@ -76,10 +76,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.17,
+      "seconds": 2.91,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut, not both fit",
@@ -95,10 +98,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.02,
+      "seconds": 1.43,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "raise of an approved expense and a budget cut, not both fit",
@@ -114,10 +120,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.06,
+      "seconds": 2.87,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a pending expense is raised while it is being approved",
@@ -135,10 +144,13 @@
       "counterexamples": [
         "scenario: a pending expense is raised while it is being approved\nR1: approve_expense(db, expense_id=1)\nR2: edit_expense(db, expense_id=1, new_amount=90)\nschedule choices: [0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT budget FROM departments WHERE id = (SELECT department_id FROM expenses WHERE id = 1) FOR UPDATE -> [(50,)]\nstep 3   R1  SELECT e.status, e.amount, (SELECT COALESCE(sum(a.amount), 0) FROM expenses a WHERE a.department_id = e.department_id AND a.status = 'approved') FROM expenses e WHERE e.id = 1 -> [('pending', 30, 0)]\nstep 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT status FROM expenses WHERE id = 1 -> [('pending',)]\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 8   R2  UPDATE expenses SET amount = 90 WHERE id = 1 -> UPDATE 1\nstep 9   R2  COMMIT -> COMMIT\n         R2  returned True\nINVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])\nreproduced on re-run: True\n"
       ],
-      "seconds": 4.27,
+      "seconds": 6.33,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a raise that both fit",
@@ -154,10 +166,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.16,
+      "seconds": 3.24,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval and a budget cut that both fit",
@@ -173,10 +188,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.24,
+      "seconds": 1.46,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "approval in one department, budget cut in another",
@@ -192,10 +210,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.56,
+      "seconds": 9.73,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -208,6 +229,7 @@
   "liveness_reason": null,
   "passed": false,
   "reproducible": true,
-  "seconds": 20.04,
+  "seconds": 28.7,
+  "warnings": [],
   "failure_category": "concurrency"
 }

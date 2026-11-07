@@ -106,10 +106,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.08,
+      "seconds": 1.56,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two overlapping bookings of a free slot",
@@ -125,10 +128,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.05,
+      "seconds": 1.47,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move from another day and a booking, for the last place of a day",
@@ -144,10 +150,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.13,
+      "seconds": 3.63,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two moves from different days, for the last place of a day",
@@ -163,10 +172,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.34,
+      "seconds": 6.07,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move from another day and a booking, onto the same slot",
@@ -182,10 +194,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.13,
+      "seconds": 2.84,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two moves between two days in opposite directions, both fit",
@@ -201,10 +216,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 4.48,
+      "seconds": 6.22,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a cancellation and a booking on the same day, both fit",
@@ -220,10 +238,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.9,
+      "seconds": 2.8,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move within a day and a booking on that day, both fit",
@@ -239,10 +260,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 2.22,
+      "seconds": 3.11,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "bookings of the same room on different days never wait",
@@ -260,10 +284,13 @@
       "counterexamples": [
         "scenario: bookings of the same room on different days never wait\nR1: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nR2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 10, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 10, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 3   R1  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND '2026-11-09 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]\nstep 4   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R1)\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 6 resumed -> [(1,)]\nstep 8   R2  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-10 11:00:00+00:00'::timestamptz AND '2026-11-10 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]\nstep 9   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-10 10:00:00+00:00'::timestamptz, '2026-11-10 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 10  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: no room has more than 3 bookings on a UTC day\nsuccess check ok: both bookings exist\nBLOCKED (blocked_independent_requests): these requests must never wait for each other: R2 waited for R1 at step 6\nreproduced on re-run: True\n"
       ],
-      "seconds": 1.8,
+      "seconds": 2.63,
       "must_not_block": true,
       "blocked_schedules": 24,
-      "liveness_reason": "blocked_independent_requests"
+      "liveness_reason": "blocked_independent_requests",
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "bookings of different rooms on the same day never wait",
@@ -279,10 +306,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 6.86,
+      "seconds": 9.93,
       "must_not_block": true,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a move into one day and a booking on another day of the same room never wait",
@@ -300,10 +330,13 @@
       "counterexamples": [
         "scenario: a move into one day and a booking on another day of the same room never wait\nR1: reschedule(db, booking_id=1, new_starts_at=datetime.datetime(2026, 11, 10, 14, 0, tzinfo=datetime.timezone.utc), new_ends_at=datetime.datetime(2026, 11, 10, 15, 0, tzinfo=datetime.timezone.utc))\nR2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 9, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 9, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 0, 0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]\nstep 3   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 4   R1  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 1 AND starts_at < '2026-11-10 15:00:00+00:00'::timestamptz AND '2026-11-10 14:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM 1 AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 14:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]\nstep 5   R1  UPDATE bookings SET starts_at = '2026-11-10 14:00:00+00:00'::timestamptz, ends_at = '2026-11-10 15:00:00+00:00'::timestamptz WHERE id = 1 RETURNING id -> UPDATE 1 [(1,)]\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R1)\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 7 resumed -> [(1,)]\nstep 9   R2  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-09 11:00:00+00:00'::timestamptz AND '2026-11-09 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-09 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]\nstep 10  R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-09 10:00:00+00:00'::timestamptz, '2026-11-09 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 11  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: no room has more than 3 bookings on a UTC day\nsuccess check ok: booking 1 is on Nov 10 at 14:00 and the Nov 9 booking exists\nBLOCKED (blocked_independent_requests): these requests must never wait for each other: R2 waited for R1 at step 7\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.65,
+      "seconds": 5.17,
       "must_not_block": true,
       "blocked_schedules": 46,
-      "liveness_reason": "blocked_independent_requests"
+      "liveness_reason": "blocked_independent_requests",
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "a cancellation on one day and a booking on another day of the same room never wait",
@@ -321,10 +354,13 @@
       "counterexamples": [
         "scenario: a cancellation on one day and a booking on another day of the same room never wait\nR1: cancel(db, booking_id=1)\nR2: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 10, 10, 0, tzinfo=datetime.timezone.utc), ends_at=datetime.datetime(2026, 11, 10, 11, 0, tzinfo=datetime.timezone.utc))\nschedule choices: [0, 0, 0, 0, 1, 1]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT room_id FROM bookings WHERE id = 1 -> [(1,)]\nstep 3   R1  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> [(1,)]\nstep 4   R1  DELETE FROM bookings WHERE id = 1 RETURNING id -> DELETE 1 [(1,)]\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT id FROM rooms WHERE id = 1 FOR UPDATE -> blocked (waiting for R1)\nstep 7   R1  COMMIT -> COMMIT\n         R1  returned True\n         R2  step 6 resumed -> [(1,)]\nstep 8   R2  SELECT EXISTS (SELECT 1 FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND starts_at < '2026-11-10 11:00:00+00:00'::timestamptz AND '2026-11-10 10:00:00+00:00'::timestamptz < ends_at), (SELECT count(*) FROM bookings WHERE room_id = 1 AND id IS DISTINCT FROM NULL AND (starts_at AT TIME ZONE 'UTC')::date = ('2026-11-10 10:00:00+00:00'::timestamptz::timestamptz AT TIME ZONE 'UTC')::date) -> [(False, 0)]\nstep 9   R2  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-10 10:00:00+00:00'::timestamptz, '2026-11-10 11:00:00+00:00'::timestamptz) -> INSERT 0 1\nstep 10  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no two bookings of the same room overlap\ninvariant ok: no room has more than 3 bookings on a UTC day\nsuccess check ok: booking 1 is gone and the Nov 10 booking exists\nBLOCKED (blocked_independent_requests): these requests must never wait for each other: R2 waited for R1 at step 6\nreproduced on re-run: True\n"
       ],
-      "seconds": 3.09,
+      "seconds": 4.44,
       "must_not_block": true,
       "blocked_schedules": 40,
-      "liveness_reason": "blocked_independent_requests"
+      "liveness_reason": "blocked_independent_requests",
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -337,6 +373,7 @@
   "liveness_reason": "blocked_independent_requests",
   "passed": false,
   "reproducible": true,
-  "seconds": 35.62,
+  "seconds": 51.16,
+  "warnings": [],
   "failure_category": "concurrency"
 }

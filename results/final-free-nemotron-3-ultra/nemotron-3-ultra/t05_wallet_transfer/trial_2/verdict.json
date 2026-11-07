@@ -1,6 +1,6 @@
 {
   "task_id": "t05_wallet_transfer",
-  "solution": "/app/results/final-free-nemotron-3-ultra/nemotron-3-ultra/t05_wallet_transfer/trial_2/solution.py",
+  "solution": "results/final-free-nemotron-3-ultra/nemotron-3-ultra/t05_wallet_transfer/trial_2/solution.py",
   "status": "graded",
   "load_error": null,
   "load_detail": null,
@@ -46,10 +46,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.84,
+      "seconds": 2.76,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "opposite transfers between two accounts",
@@ -65,10 +68,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.46,
+      "seconds": 2.12,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     },
     {
       "name": "two transfers out of one account, both fit",
@@ -84,10 +90,13 @@
       "unlive_schedules": 0,
       "all_reproduced": true,
       "counterexamples": [],
-      "seconds": 1.52,
+      "seconds": 2.12,
       "must_not_block": false,
       "blocked_schedules": 0,
-      "liveness_reason": null
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
     }
   ],
   "scores": {
@@ -100,7 +109,7 @@
   "liveness_reason": null,
   "passed": true,
   "reproducible": true,
-  "seconds": 5.11,
+  "seconds": 7.32,
   "warnings": [],
   "failure_category": null,
   "api": {
@@ -113,5 +122,6 @@
     "cost_usd": 0.0,
     "seconds": 505.65,
     "attempts": 1
-  }
+  },
+  "regraded_from_disk": true
 }
