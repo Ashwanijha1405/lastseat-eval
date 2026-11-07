@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 6655,
+  "stop_reason": "end_turn",
+  "session_id": "3ee52b4d-8514-4b22-a0ab-de9d060d274f",
+  "total_cost_usd": 0.0179812,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 360,
+    "cache_read_input_tokens": 4666,
+    "output_tokens": 708,
+    "output_tokens_details": {
+      "thinking_tokens": 231
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 360,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 708,
+        "cache_read_input_tokens": 4666,
+        "cache_creation_input_tokens": 360,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 360
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 708,
+      "cacheReadInputTokens": 4666,
+      "cacheCreationInputTokens": 360,
+      "webSearchRequests": 0,
+      "costUSD": 0.0179812,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 231,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 360,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "A single conditional `UPDATE` under READ COMMITTED does the job. PostgreSQL row-locks the product and, if another purchase changed the row first, checks `stock >= qty` again against the newest version. So stock can never go negative, and a purchase that still fits after the earlier ones is never wrongly refused. The order insert happens in the same transaction, so stock and orders always change together.\n\n```python\nimport psycopg.errors\n\n\ndef purchase(db, product_id: int, qty: int) -> bool:\n    for _ in range(10):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"UPDATE products SET stock = stock - %(qty)s \"\n                \"WHERE id = %(pid)s AND stock >= %(qty)s \"\n                \"RETURNING stock\",\n                {\"pid\": product_id, \"qty\": qty},\n            )\n            if not rows:\n                db.rollback()\n                return False\n            db.execute(\n                \"INSERT INTO orders (product_id, qty) VALUES (%(pid)s, %(qty)s)\",\n                {\"pid\": product_id, \"qty\": qty},\n            )\n            db.commit()\n            return True\n        except (\n            psycopg.errors.SerializationFailure,\n            psycopg.errors.DeadlockDetected,\n            psycopg.errors.LockNotAvailable,\n        ):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n    return False\n```",
+  "ttft_ms": 3220,
+  "type": "result",
+  "duration_ms": 6809,
+  "uuid": "67ab99f6-e8fe-479c-bc6e-e62260abd553",
+  "ttft_stream_ms": 824,
+  "time_to_request_ms": 152,
+  "first_content_frame_ms": 824,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

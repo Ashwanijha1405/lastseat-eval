@@ -1,0 +1,52 @@
+import psycopg.errors as errors
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "SELECT department_id FROM expenses WHERE id = %s",
+                (expense_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            dept_id = rows[0][0]
+
+            # Serialize all approvals for this department.
+            drows = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,),
+            )
+            budget = drows[0][0]
+
+            erows = db.execute(
+                "SELECT status, amount FROM expenses WHERE id = %s FOR UPDATE",
+                (expense_id,),
+            )
+            status, amount = erows[0]
+            if status != "pending":
+                db.rollback()
+                return False
+
+            srows = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,),
+            )
+            total = int(srows[0][0])
+            if total + amount > budget:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE expenses SET status = 'approved' WHERE id = %s",
+                (expense_id,),
+            )
+            db.commit()
+            return True
+        except (errors.SerializationFailure, errors.DeadlockDetected):
+            db.rollback()
+            continue
+    return False

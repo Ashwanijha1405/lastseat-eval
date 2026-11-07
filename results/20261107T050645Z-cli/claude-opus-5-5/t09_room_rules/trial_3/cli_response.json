@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 32131,
+  "stop_reason": "end_turn",
+  "session_id": "32e88dd1-6d0f-44fd-963f-eb43ea5890a1",
+  "total_cost_usd": 0.07851439999999998,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 357,
+    "cache_read_input_tokens": 5252,
+    "output_tokens": 3730,
+    "output_tokens_details": {
+      "thinking_tokens": 1456
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 357,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 3730,
+        "cache_read_input_tokens": 5252,
+        "cache_creation_input_tokens": 357,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 357
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 3730,
+      "cacheReadInputTokens": 5252,
+      "cacheCreationInputTokens": 357,
+      "webSearchRequests": 0,
+      "costUSD": 0.07851439999999998,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1456,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 357,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Every operation that changes a room takes a lock on that room's `rooms` row first. That makes the check-then-write sequence atomic per room, and it cannot deadlock.\n\n**Why this is correct under concurrency**\n\n- **One lock per room.** `book` and `reschedule` begin by running `SELECT ... FROM rooms WHERE id = ... FOR NO KEY UPDATE` on the room they affect. Requests for the same room run their checks one at a time. Requests for different rooms never block each other.\n- **Fresh reads after the lock.** The isolation level is READ COMMITTED, so each statement gets a new snapshot. Once the lock is held, the overlap check and the per-day count see every committed change from earlier lock holders. The rules are checked against the true state, so overlaps and a 4th booking on a day cannot happen.\n- **No deadlocks.** A request locks only one room, so there is no lock cycle. A booking never changes room, so `reschedule` can read the booking's `room_id` safely before locking.\n- **Cancelled during a reschedule.** After taking the room lock, `reschedule` re-reads the booking with `FOR UPDATE`. If a concurrent `cancel` deleted it, `reschedule` returns `False`.\n- **No conflict with the foreign key check.** The lock is `FOR NO KEY UPDATE`, which does not conflict with the `FOR KEY SHARE` lock that the FK check on `bookings` inserts takes. It does conflict with itself, which is the per-room serialization we want.\n- **`cancel` is a single statement.** It is an atomic `DELETE ... RETURNING`.\n- **Requests that fit always succeed.** A request is never refused because another one is in progress: it waits for the lock and then checks real data. There is a bounded retry for any unexpected transient error such as a serialization failure or deadlock.\n\n```python\nimport datetime\n\nimport psycopg.errors as errors\n\n_UTC = datetime.timezone.utc\n_RETRYABLE = (\n    errors.SerializationFailure,\n    errors.DeadlockDetected,\n    errors.LockNotAvailable,\n)\n_MAX_ATTEMPTS = 5\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS bookings_room_starts_idx \"\n        \"ON bookings (room_id, starts_at)\"\n    )\n\n\ndef _day_bounds(ts: datetime.datetime):\n    d = ts.astimezone(_UTC).date()\n    start = datetime.datetime(d.year, d.month, d.day, tzinfo=_UTC)\n    return start, start + datetime.timedelta(days=1)\n\n\ndef _lock_room(db, room_id: int) -> None:\n    db.execute(\n        \"SELECT id FROM rooms WHERE id = %s FOR NO KEY UPDATE\",\n        (room_id,),\n    )\n\n\ndef _fits(db, room_id, starts_at, ends_at, exclude_id) -> bool:\n    # Overlap check (half-open intervals), excluding the booking being moved.\n    rows = db.execute(\n        \"SELECT 1 FROM bookings \"\n        \"WHERE room_id = %(r)s AND starts_at < %(e)s AND ends_at > %(s)s \"\n        \"AND id <> %(x)s LIMIT 1\",\n        {\"r\": room_id, \"s\": starts_at, \"e\": ends_at, \"x\": exclude_id},\n    )\n    if rows:\n        return False\n    day_start, day_end = _day_bounds(starts_at)\n    rows = db.execute(\n        \"SELECT count(*) FROM bookings \"\n        \"WHERE room_id = %(r)s AND starts_at >= %(ds)s AND starts_at < %(de)s \"\n        \"AND id <> %(x)s\",\n        {\"r\": room_id, \"ds\": day_start, \"de\": day_end, \"x\": exclude_id},\n    )\n    return rows[0][0] < 3\n\n\ndef _safe_rollback(db) -> None:\n    try:\n        db.rollback()\n    except Exception:\n        pass\n\n\ndef book(db, room_id: int, starts_at: datetime.datetime,\n         ends_at: datetime.datetime) -> bool:\n    last_exc = None\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin(\"read committed\")\n            _lock_room(db, room_id)\n            if not _fits(db, room_id, starts_at, ends_at, -1):\n                db.rollback()\n                return False\n            db.execute(\n                \"INSERT INTO bookings (room_id, starts_at, ends_at) \"\n                \"VALUES (%s, %s, %s)\",\n                (room_id, starts_at, ends_at),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE as exc:\n            last_exc = exc\n            _safe_rollback(db)\n        except Exception:\n            _safe_rollback(db)\n            raise\n    raise last_exc\n\n\ndef reschedule(db, booking_id: int, new_starts_at: datetime.datetime,\n               new_ends_at: datetime.datetime) -> bool:\n    last_exc = None\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"SELECT room_id FROM bookings WHERE id = %s\", (booking_id,)\n            )\n            if not rows:\n                db.rollback()\n                return False\n            room_id = rows[0][0]\n            _lock_room(db, room_id)\n            # Re-check existence under the room lock (it may have been cancelled).\n            rows = db.execute(\n                \"SELECT id FROM bookings WHERE id = %s FOR UPDATE\",\n                (booking_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            if not _fits(db, room_id, new_starts_at, new_ends_at, booking_id):\n                db.rollback()\n                return False\n            db.execute(\n                \"UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s\",\n                (new_starts_at, new_ends_at, booking_id),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE as exc:\n            last_exc = exc\n            _safe_rollback(db)\n        except Exception:\n            _safe_rollback(db)\n            raise\n    raise last_exc\n\n\ndef cancel(db, booking_id: int) -> bool:\n    last_exc = None\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            rows = db.execute(\n                \"DELETE FROM bookings WHERE id = %s RETURNING id\", (booking_id,)\n            )\n            return bool(rows)\n        except _RETRYABLE as exc:\n            last_exc = exc\n    raise last_exc\n```",
+  "ttft_ms": 15095,
+  "type": "result",
+  "duration_ms": 32364,
+  "uuid": "51ebdf6e-4f32-4505-aa2d-a4b13525bff6",
+  "ttft_stream_ms": 1129,
+  "time_to_request_ms": 232,
+  "first_content_frame_ms": 1129,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

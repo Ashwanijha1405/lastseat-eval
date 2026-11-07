@@ -1,0 +1,117 @@
+Every operation on a room takes a lock on that room's row first. While one request holds the lock, others on the same room wait for it instead of failing. Under `read committed`, each statement after the lock sees the latest committed data, so the overlap check and the daily count are always current. Bookings never change rooms, so one lock per room is enough, and every request locks at most one room before any booking row, which rules out deadlocks.
+
+```python
+from datetime import datetime, timedelta, timezone
+from psycopg import errors
+
+_RETRYABLE = (errors.SerializationFailure, errors.DeadlockDetected, errors.LockNotAvailable)
+_MAX_TRIES = 5
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_starts_idx "
+        "ON bookings (room_id, starts_at)"
+    )
+
+
+def _day_bounds(starts_at: datetime):
+    d = starts_at.astimezone(timezone.utc).date()
+    lo = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    return lo, lo + timedelta(days=1)
+
+
+def _lock_room(db, room_id):
+    db.execute("SELECT id FROM rooms WHERE id = %s FOR UPDATE", (room_id,))
+
+
+def _fits(db, room_id, starts_at, ends_at, exclude_id):
+    # Overlap check against other bookings of the room.
+    rows = db.execute(
+        "SELECT 1 FROM bookings "
+        "WHERE room_id = %s AND id <> %s AND starts_at < %s AND ends_at > %s "
+        "LIMIT 1",
+        (room_id, exclude_id, ends_at, starts_at),
+    )
+    if rows:
+        return False
+    lo, hi = _day_bounds(starts_at)
+    rows = db.execute(
+        "SELECT count(*) FROM bookings "
+        "WHERE room_id = %s AND id <> %s AND starts_at >= %s AND starts_at < %s",
+        (room_id, exclude_id, lo, hi),
+    )
+    return rows[0][0] < 3
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    for _ in range(_MAX_TRIES):
+        try:
+            db.begin("read committed")
+            _lock_room(db, room_id)
+            if not _fits(db, room_id, starts_at, ends_at, -1):
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    for _ in range(_MAX_TRIES):
+        try:
+            db.begin("read committed")
+            rows = db.execute("SELECT room_id FROM bookings WHERE id = %s", (booking_id,))
+            if not rows:
+                db.rollback()
+                return False
+            room_id = rows[0][0]
+            _lock_room(db, room_id)
+            # Re-check existence under the room lock (it may have been cancelled).
+            rows = db.execute(
+                "SELECT id FROM bookings WHERE id = %s FOR UPDATE", (booking_id,)
+            )
+            if not rows:
+                db.rollback()
+                return False
+            if not _fits(db, room_id, new_starts_at, new_ends_at, booking_id):
+                db.rollback()
+                return False
+            rows = db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s RETURNING id",
+                (new_starts_at, new_ends_at, booking_id),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    for _ in range(_MAX_TRIES):
+        try:
+            rows = db.execute(
+                "DELETE FROM bookings WHERE id = %s RETURNING id", (booking_id,)
+            )
+            return bool(rows)
+        except _RETRYABLE:
+            pass
+    return False
+```
+
+**How it works**
+- **`book`** locks the room. It then checks that no booking of the room overlaps the half-open interval `[starts_at, ends_at)` and that fewer than 3 bookings start on that UTC day. Only if both checks pass does it insert the new booking.
+- **`reschedule`** finds the booking's room and locks it. It then locks the booking row and re-checks that the booking still exists, in case it was cancelled in the meantime. The overlap and day-count checks leave out the booking itself, so it can move within its own day or onto part of its old slot.
+- **`cancel`** is a single `DELETE … RETURNING`. Deleting a booking can never break either rule. If a reschedule holds the booking's row lock, the delete waits for it to finish and then deletes the booking.
+- **Retries:** the room-first lock order should prevent deadlocks and serialization failures entirely. A small bounded retry loop is there as a safety net, well within the 60-call limit.
+- **`migrate`** only adds an index on `(room_id, starts_at)` to speed up the checks.

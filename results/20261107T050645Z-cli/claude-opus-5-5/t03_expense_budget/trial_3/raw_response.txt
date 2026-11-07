@@ -1,0 +1,81 @@
+The approach is to lock the department row, so approvals for one department take turns.
+
+1. Read the expense's `department_id`. It never changes, so reading it without a lock is safe.
+2. Lock that department's row with `SELECT … FOR NO KEY UPDATE`. Every approval for the same department now waits its turn. Approvals for other departments are not blocked. Inserts into `expenses` are not blocked either, because `NO KEY UPDATE` does not conflict with the key-share lock that foreign-key checks take.
+3. Run one conditional `UPDATE`. It approves the expense only if it is still `pending` and the department's approved total plus this amount is within budget. It uses Read Committed, so this statement gets a fresh snapshot taken after the lock was granted. That means it sees every approval already committed for the department. This keeps rule 1.
+4. No request ever has to give up because another is running at the same moment. Each one waits for the lock and then checks against the real committed total, so any set of approvals that fits one after another also fits here. This keeps rule 2.
+5. Each transaction locks only one department row, so deadlocks between these requests should not happen. A short, bounded retry loop handles any unexpected `40001`/`40P01` errors and stays well under the 60-call limit.
+
+```python
+import psycopg.errors as errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS expenses_dept_status_idx "
+        "ON expenses (department_id, status) INCLUDE (amount)"
+    )
+
+
+_RETRYABLE = (
+    errors.SerializationFailure,
+    errors.DeadlockDetected,
+    errors.LockNotAvailable,
+)
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    for _ in range(8):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "SELECT department_id FROM expenses WHERE id = %s",
+                (expense_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            dept_id = rows[0][0]
+
+            # Serialize all approvals for this department.
+            dept = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR NO KEY UPDATE",
+                (dept_id,),
+            )
+            if not dept:
+                db.rollback()
+                return False
+
+            # Fresh snapshot (read committed) taken after the lock is held.
+            updated = db.execute(
+                """
+                UPDATE expenses e
+                   SET status = 'approved'
+                 WHERE e.id = %(eid)s
+                   AND e.status = 'pending'
+                   AND e.amount + (
+                         SELECT COALESCE(SUM(x.amount), 0)
+                           FROM expenses x
+                          WHERE x.department_id = %(did)s
+                            AND x.status = 'approved'
+                       ) <= (SELECT d.budget FROM departments d WHERE d.id = %(did)s)
+                RETURNING e.id
+                """,
+                {"eid": expense_id, "did": dept_id},
+            )
+            db.commit()
+            return bool(updated)
+        except _RETRYABLE:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+    return False
+```

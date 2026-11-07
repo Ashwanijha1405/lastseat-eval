@@ -1,0 +1,78 @@
+{
+  "run_id": "20261107T050645Z-cli",
+  "source": "official-cli",
+  "signature": {
+    "config": "official-cli",
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "tasks": [
+      "t01_flash_sale",
+      "t03_expense_budget",
+      "t08_expense_endpoints",
+      "t09_room_rules"
+    ],
+    "trials": 3,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-07T05:06:48+00:00",
+  "git_commit": "7d478958801dc9b3ac6fd01dfa087582ca542e51",
+  "dry_run": false,
+  "trials": 3,
+  "config": "official-cli",
+  "tier": "subscription",
+  "tasks": [
+    "t01_flash_sale",
+    "t03_expense_budget",
+    "t08_expense_endpoints",
+    "t09_room_rules"
+  ],
+  "models": [
+    {
+      "slug": "claude-opus-5-5",
+      "id": "claude-opus-5-5",
+      "source": "official-cli"
+    }
+  ],
+  "cli": {
+    "effort": "high",
+    "version": "2.1.319 (Claude Code)",
+    "command": [
+      "claude.EXE",
+      "-p",
+      "--model",
+      "claude-opus-5-5",
+      "--effort",
+      "high",
+      "--output-format",
+      "json",
+      "--tools",
+      "",
+      "--safe-mode",
+      "--strict-mcp-config",
+      "--disable-slash-commands",
+      "--no-session-persistence"
+    ],
+    "system_prompt_note": "Answers come from Claude Code headless mode (claude -p). The CLI's own system prompt is included before the task prompt, so these cells are not directly comparable with API/OpenRouter cells.",
+    "env_dropped": "ANTHROPIC_*, CLAUDE*, OPENROUTER_*, GEMINI_*, GOOGLE_API_KEY, LASTSEAT_*"
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "spent_usd": 0.0,
+  "complete": true,
+  "sessions": [
+    {
+      "started_utc": "2026-11-07T05:06:49+00:00",
+      "cli_version": "2.1.319 (Claude Code)",
+      "calls": 12,
+      "finished_utc": "2026-11-07T05:10:42+00:00"
+    }
+  ],
+  "api_calls": 12
+}

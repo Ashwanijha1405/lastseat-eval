@@ -1,0 +1,89 @@
+Approvals for the same department are serialized by taking a row lock on the department first. The budget check then runs inside that lock. Under read committed, each statement after the lock sees every approval that committed before it, so the sum is always current.
+
+- **Rule 1 (never over budget):** two approvals for one department can't both check the sum and then both approve. The second waits for the first to commit and then sees its approved amount.
+- **Rule 2 (fitting approvals succeed):** concurrent requests just wait their turn. If the whole set would succeed one after another, each one sees exactly that running total and returns `True`.
+- **Lock ordering:** every request locks the department first and the expense second, always in that order. That prevents deadlocks between approvals. `FOR NO KEY UPDATE` is used on the department so it doesn't block foreign-key checks from inserts into `expenses`.
+- **Index:** `migrate` adds an index so the sum query stays cheap.
+- **Retries:** a bounded retry loop handles any unexpected serialization errors or deadlocks from other workloads.
+
+```python
+import psycopg.errors as errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS expenses_dept_status_idx "
+        "ON expenses (department_id, status) INCLUDE (amount)"
+    )
+
+
+def _attempt(db, expense_id: int) -> bool:
+    db.begin("read committed")
+    try:
+        rows = db.execute(
+            "SELECT department_id FROM expenses WHERE id = %s", (expense_id,)
+        )
+        if not rows:
+            db.rollback()
+            return False
+        dept_id = rows[0][0]
+
+        # Serialize all approvals for this department.
+        drows = db.execute(
+            "SELECT budget FROM departments WHERE id = %s FOR NO KEY UPDATE",
+            (dept_id,),
+        )
+        if not drows:
+            db.rollback()
+            return False
+        budget = drows[0][0]
+
+        erows = db.execute(
+            "SELECT status, amount FROM expenses WHERE id = %s FOR UPDATE",
+            (expense_id,),
+        )
+        if not erows or erows[0][0] != "pending":
+            db.rollback()
+            return False
+        amount = erows[0][1]
+
+        srows = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+            "WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )
+        total = int(srows[0][0])
+
+        if total + amount > budget:
+            db.rollback()
+            return False
+
+        db.execute(
+            "UPDATE expenses SET status = 'approved' "
+            "WHERE id = %s AND status = 'pending'",
+            (expense_id,),
+        )
+        db.commit()
+        return True
+    except BaseException:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    last_exc = None
+    for _ in range(7):
+        try:
+            return _attempt(db, expense_id)
+        except (
+            errors.SerializationFailure,
+            errors.DeadlockDetected,
+            errors.LockNotAvailable,
+        ) as e:
+            last_exc = e
+            continue
+    raise last_exc
+```
