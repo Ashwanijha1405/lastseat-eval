@@ -58,10 +58,50 @@ def prepare(args: argparse.Namespace) -> int:
             d.mkdir(parents=True, exist_ok=True)
             (d / "prompt.txt").write_text(build_prompt(t), encoding="utf-8", newline="\n")
     run_dir.mkdir(parents=True, exist_ok=True)
+    for src in args.reuse_from or []:
+        problem = reuse(run_dir, meta, RESULTS / src)
+        if problem:
+            print(f"refusing to reuse {src}: {problem}")
+            return 2
     _write_json(meta_file, meta)
     print(f"prepared {run_dir} ({len(tasks)} task(s) x {args.trials} trial(s), model {args.model})")
     print(f"RUN_ID={run_id}")
     return 0
+
+
+NOT_COPIED = ("verdict.json", "verdict.prev.json", "solution.py", "prompt.txt")
+
+
+def _text(p: Path) -> str:
+    return p.read_text(encoding="utf-8").replace("\r\n", "\n")  # a git checkout may add CRs
+
+
+def reuse(run_dir: Path, meta: dict, src: Path) -> str | None:
+    """Copy answered trials of an earlier run with the same model, CLI and effort
+    into the empty trial slots of the same number, when the prompt is identical.
+    The copy is graded again by the current grader (verdicts are not copied).
+    Returns why the source run cannot be used, or None."""
+    src_meta = json.loads((src / "run_meta.json").read_text(encoding="utf-8"))
+    mine, theirs = meta["models"][0], src_meta["models"][0]
+    for what, a, b in (("source", SOURCE, src_meta.get("source")), ("model", mine["id"], theirs["id"]),
+                       ("cli", meta["cli"]["name"], src_meta["cli"]["name"]),
+                       ("effort", meta["cli"]["effort"], src_meta["cli"]["effort"])):
+        if a != b:
+            return f"{what} differs ({b!r}, this run has {a!r})"
+    for d in sorted(run_dir.glob(f"{mine['slug']}/*/trial_*")):
+        s = src / theirs["slug"] / d.parent.name / d.name
+        cell = f"{d.parent.name}/{d.name}"
+        if (d / "cli_response.json").exists() or not (s / "cli_response.json").exists():
+            continue
+        if _text(s / "prompt.txt") != _text(d / "prompt.txt"):
+            print(f"  not reusing {src.name}/{cell}: the prompt changed since")
+            continue
+        for f in s.iterdir():
+            if f.is_file() and f.name not in NOT_COPIED and not f.name.startswith("counterexample_"):
+                (d / f.name).write_bytes(f.read_bytes())
+        meta.setdefault("reused", {})[cell] = f"{src.name}/{theirs['slug']}/{cell}"
+        print(f"  reused {src.name}/{cell} (CLI {src_meta['cli'].get('version')})")
+    return None
 
 
 def grade(run_dir: Path) -> int:
@@ -109,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
     pr.add_argument("--trials", type=int, default=3)
     pr.add_argument("--task", action="append")
+    pr.add_argument("--reuse-from", action="append", metavar="RUN_ID",
+                    help="copy answered trials (same model, CLI, effort, identical prompt) from this run")
     g = sub.add_parser("grade", help="grade every answered, ungraded trial")
     g.add_argument("run_dir", type=Path)
     args = p.parse_args(argv)

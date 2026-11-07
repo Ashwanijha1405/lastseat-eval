@@ -56,8 +56,9 @@ def _cell(d: Path, v: dict | None) -> str:
         cat = failure_category(v)
         detail = v.get("load_error") or v.get("safety_reason") or v.get("liveness_reason")
         mark = f"FAIL [{cat}]" + (f" ({detail})" if detail else "")
+    warn = "".join(f" ⚠ {kind}" for kind in dict.fromkeys(w["kind"] for w in v.get("warnings") or []))
     return (f"{mark} {s.get('total', 0):.2f} (sa {s.get('safety', 0):.2f} / so {s.get('solo', 0):.2f}"
-            f" / li {s.get('liveness', 0):.2f})")
+            f" / li {s.get('liveness', 0):.2f}){warn}")
 
 
 def summarize(run: Path) -> str:
@@ -68,6 +69,10 @@ def summarize(run: Path) -> str:
     out = [f"# Run {meta['run_id']} ({meta.get('tier')}, {meta['trials']} trial(s))", ""]
     if meta.get("notes"):
         out += [f"> Note: {meta['notes']}", ""]
+    if meta.get("reused"):
+        out += [f"> {len(meta['reused'])} trial(s) reused from earlier runs with the same model, CLI, effort and"
+                " prompt (graded again by the current grader): "
+                + ", ".join(f"{cell} ← {src.split('/')[0]}" for cell, src in meta["reused"].items()), ""]
 
     k = meta["trials"]
     source_of = {m["slug"]: m.get("source", meta.get("source", "openrouter")) for m in meta["models"]}
@@ -130,6 +135,15 @@ def summarize(run: Path) -> str:
                 for f in sorted(d.glob("counterexample_*.txt")):
                     out.append(f"- counterexample: `{f.relative_to(run.parent.parent).as_posix()}`")
                 out.append("")
+    warned = [(m, t, d, v, w) for m in models for t in tasks for d, v in cells[m, t] if v
+              for w in v.get("warnings") or []]
+    if warned:
+        out += ["## Warnings (do not change the score)", ""]
+        out += [f"- {m} / {t} / {d.name}: **{w['kind']}** `{w['name']}` at line(s) "
+                f"{', '.join(map(str, w['lines']))}: {w['detail']}"
+                + (" (passed anyway: the name is looked up only when that line runs)" if v.get("passed") else "")
+                for m, t, d, v, w in warned]
+        out.append("")
     out += ["## API", "", "| model | task | trial | tokens out | seconds | attempts | finish | provider |",
             "|---|---|---|---|---|---|---|---|"]
     for (m, t), trials in cells.items():

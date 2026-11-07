@@ -738,3 +738,24 @@ Antigravity CLI (agy 1.4.12, already installed and signed in).
   limits, tool runs, timeouts and auth errors still stop at once; an answer the
   CLI marked ERROR is never graded; failed attempts are kept as
   raw_cli_stdout.attemptN.txt and api.json records `attempts`.
+
+## 2026-11-07: static warning latent_api_error; reusing trials in final runs
+
+Claude drafted:
+- `lastseat/static_check.py`: parses the solution (ast, never runs it), follows
+  every way psycopg's errors module can be imported, and flags each
+  `psycopg.errors.<Name>` the pinned psycopg (3.3.6) does not define. Stored as
+  `warnings` in verdict.json; it never changes the score or category. summary.md
+  marks the cell with a warning sign and lists it under "Warnings". Triggered by
+  Gemini t08 trial_2, which passed although its `except` clause names psycopg2's
+  `TransactionRollbackError` (Python looks it up only when an exception reaches
+  the clause). On all existing results it flags exactly that trial and t10 trial_2.
+- `official_cli prepare --reuse-from <run>` (`-ReuseFrom` in run.ps1): copies
+  answered trials into a final run when model, CLI and effort match and the
+  prompt is identical; verdicts are not copied, so the current grader grades them
+  again. run_meta `reused` maps each cell to its source; summary.md lists them.
+- Tests: tests/test_static_check.py; reuse test in tests/test_official_cli.py.
+
+Review: the alias tracking (import forms covered in the test parametrization;
+names rebound later are not tracked); whether the warning should cover other
+psycopg modules (only `errors` for now, as asked).

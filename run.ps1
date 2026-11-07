@@ -21,7 +21,8 @@ param(
     [switch]$Regrade,
     [int]$Trials = 3,
     [string]$Effort = "high",
-    [ValidateSet("claude", "antigravity")][string]$Cli = "claude"
+    [ValidateSet("claude", "antigravity")][string]$Cli = "claude",
+    [string[]]$ReuseFrom
 )
 # No $ErrorActionPreference = "Stop": in Windows PowerShell 5.1 it turns docker's
 # ordinary stderr progress lines into fatal errors. Exit codes are checked instead.
@@ -62,6 +63,7 @@ switch ($Command) {
             ".\run.ps1 dry-run                           mock model returning the references, no API",
             ".\run.ps1 official-cli -Model claude-opus-5-5 (-New | -Run <id>) [-Task ..] [-Trials 3] [-Yes]",
             "                                            Claude Code headless (claude -p), one call at a time",
+            "  official-cli ... -ReuseFrom <id>[,<id>]   copy answered trials (same model/CLI/effort/prompt), graded again",
             "  official-cli -Cli antigravity -Model gemini-3.8-flash-high ...  Gemini via Antigravity CLI (agy --print)",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
@@ -100,6 +102,7 @@ switch ($Command) {
         $a = @("python", "-m", "lastseat.official_cli", "prepare", "--run-id", $Run, "--model", $Model[0],
                "--trials", "$Trials", "--effort", $Effort, "--cli", $Cli)
         foreach ($t in $Task) { $a += @("--task", $t) }
+        foreach ($r in $ReuseFrom) { $a += @("--reuse-from", $r) }
         Invoke-Eval $a
         if (-not $Yes) { Write-Output "prepared only; add -Yes -Run $Run to ask the CLI"; exit 0 }
         & python lastseat/cli_host.py "results/$Run"

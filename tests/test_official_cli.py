@@ -139,6 +139,26 @@ def test_prepare_never_starts_a_run_implicitly(cli_run, capsys):
                               "--trials", "2", "--task", "t01_flash_sale"]) == 2   # a different signature
 
 
+def test_a_final_run_reuses_answered_trials_and_grades_them_again(cli_run):
+    run_dir, _ = cli_run
+    assert cli_host.run(run_dir) == 0 and official_cli.grade(run_dir) == 0
+    results = run_dir.parent
+    final = ["prepare", "--run-id", "f", "--model", "claude-opus-5-5", "--slug", "opus",
+             "--trials", "3", "--task", "t01_flash_sale"]
+    assert official_cli.main(final + ["--effort", "max", "--reuse-from", "c"]) == 2, "other settings: refused"
+    assert not (results / "f" / "run_meta.json").exists()
+    (run_dir / "opus" / "t01_flash_sale" / "trial_2" / "prompt.txt").write_text("an older prompt")
+    assert official_cli.main(final + ["--reuse-from", "c"]) == 0
+    cells = results / "f" / "opus" / "t01_flash_sale"
+    assert (cells / "trial_1" / "cli_response.json").exists() and not (cells / "trial_1" / "verdict.json").exists()
+    assert not (cells / "trial_2" / "cli_response.json").exists(), "a different prompt is never reused"
+    meta = json.loads((results / "f" / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["reused"] == {"t01_flash_sale/trial_1": "c/opus/t01_flash_sale/trial_1"}
+    official_cli.grade(results / "f")
+    assert json.loads((cells / "trial_1" / "verdict.json").read_text(encoding="utf-8"))["passed"] is True
+    assert "reused" in summarize(results / "f")
+
+
 # --- Antigravity CLI (agy), for Gemini -----------------------------------------
 
 def _agy_out(response="```python\nx = 1\n```", status="SUCCESS", tools=(), error=None):

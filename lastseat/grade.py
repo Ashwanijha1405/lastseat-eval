@@ -31,6 +31,7 @@ from .scheduler import (
     ensure_role,
 )
 from .task import ANY_RETURN, Call, Scenario, SoloCheck, Task, load_task
+from .static_check import latent_api_errors
 
 APP_ROLE = "lastseat_app"
 MAX_COUNTEREXAMPLES = 3
@@ -84,6 +85,7 @@ class Verdict:
     passed: bool = False
     reproducible: bool = True
     seconds: float = 0.0
+    warnings: list[dict] = field(default_factory=list)  # static warnings (latent_api_error); never scored
 
     def to_json(self) -> str:
         d = asdict(self)
@@ -121,6 +123,7 @@ def grade(task: Task, source: str, *, solution_label: str = "solution.py", conni
           max_schedules: int = 2000, random_schedules: int = 200, seed: int = 0) -> Verdict:
     started = time.monotonic()
     verdict = Verdict(task.id, solution_label, "graded")
+    verdict.warnings = latent_api_errors(source)
     try:
         solution = load_solution(source, task.entrypoints, allow_migrate=task.allow_migrate)
     except LoadError as e:
