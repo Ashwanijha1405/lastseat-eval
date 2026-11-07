@@ -69,11 +69,29 @@ def summarize(run: Path) -> str:
     if meta.get("notes"):
         out += [f"> Note: {meta['notes']}", ""]
 
-    out += ["| task | " + " | ".join(models) + " |", "|---|" + "---|" * len(models)]
-    for t in tasks:
-        row = ["<br>".join(_cell(d, v) for d, v in cells[m, t]) for m in models]
-        out.append(f"| {t} | " + " | ".join(row) + " |")
-    out.append("")
+    k = meta["trials"]
+    source_of = {m["slug"]: m.get("source", meta.get("source", "openrouter")) for m in meta["models"]}
+    for source in dict.fromkeys(source_of.values()):
+        group = [m for m in models if source_of[m] == source]
+        out += [f"## Source: {source}", ""]
+        if source == "official-cli":
+            cli = meta.get("cli") or {}
+            out += [f"CLI `{cli.get('version')}`, effort `{cli.get('effort')}`, command "
+                    f"`{' '.join(repr(a) if a == '' else a for a in cli.get('command', []))}`. "
+                    f"{cli.get('system_prompt_note', '')}", ""]
+        out += ["| task | " + " | ".join(group) + " |", "|---|" + "---|" * len(group)]
+        for t in tasks:
+            row = []
+            for m in group:
+                text = "<br>".join(f"{d.name}: {_cell(d, v)}" if k > 1 else _cell(d, v) for d, v in cells[m, t])
+                if k > 1:
+                    vs = [v for _, v in cells[m, t]]
+                    done = all(v is not None for v in vs)
+                    text += f"<br>**pass^{k}: " + (("yes" if all(v.get("passed") for v in vs) else "no")
+                                                   if done else "incomplete") + "**"
+                row.append(text)
+            out.append(f"| {t} | " + " | ".join(row) + " |")
+        out.append("")
     for m in models:
         vs = [v for t in tasks for _, v in cells[m, t] if v]
         n = sum(len(cells[m, t]) for t in tasks)
@@ -115,8 +133,11 @@ def summarize(run: Path) -> str:
     for (m, t), trials in cells.items():
         for d, v in trials:
             api = (v or {}).get("api") or {}
+            provider = str(api.get("provider"))
+            if api.get("models_shown"):  # official-cli: the model the CLI reported, and when
+                provider += f" (model shown {', '.join(api['models_shown'])}, {api.get('date_utc')})"
             out.append(f"| {m} | {t} | {d.name} | {api.get('completion_tokens')} | {api.get('seconds')} | "
-                       f"{api.get('attempts')} | {api.get('finish_reason')} | {api.get('provider')} |")
+                       f"{api.get('attempts')} | {api.get('finish_reason')} | {provider} |")
     out += ["", f"spent_usd: {meta.get('spent_usd')}, api_calls: {meta.get('api_calls')}, "
             f"sessions: {len(meta.get('sessions', []))}, complete: {meta.get('complete')}"]
     return "\n".join(out) + "\n"

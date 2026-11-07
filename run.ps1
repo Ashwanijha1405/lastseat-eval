@@ -18,7 +18,9 @@ param(
     [int]$Jobs = 0,
     [string[]]$Task,
     [string[]]$Model,
-    [switch]$Regrade
+    [switch]$Regrade,
+    [int]$Trials = 3,
+    [string]$Effort = "high"
 )
 # No $ErrorActionPreference = "Stop": in Windows PowerShell 5.1 it turns docker's
 # ordinary stderr progress lines into fatal errors. Exit codes are checked instead.
@@ -57,6 +59,8 @@ switch ($Command) {
             ".\run.ps1 quota                             free-model requests used / left today",
             ".\run.ps1 summary -Run <run_id> [-Regrade]   write results/<run_id>/summary.md (-Regrade: no API)",
             ".\run.ps1 dry-run                           mock model returning the references, no API",
+            ".\run.ps1 official-cli -Model claude-opus-5-5 (-New | -Run <id>) [-Task ..] [-Trials 3] [-Yes]",
+            "                                            Claude Code headless (claude -p), one call at a time",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
             "  run/pilot options: -Config free|paid (default free) -Run <id> -New -From <pilot id>",
@@ -84,6 +88,23 @@ switch ($Command) {
         $a = @("python", "-m", "lastseat.summary", "results/$Run")
         if ($Regrade) { $a += "--regrade" }
         Invoke-Eval $a
+    }
+    "official-cli" {
+        # Claude Code headless (claude -p) on this machine; prepare and grade run in Docker.
+        if ($Model.Count -ne 1) { Write-Output "official-cli needs exactly one -Model <full model name>"; exit 2 }
+        if ($New -and -not $Run) { $Run = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "-cli" }
+        if (-not $Run) { Write-Output "official-cli needs -Run <id> (continue) or -New (start); never implicit"; exit 2 }
+        Start-Db
+        $a = @("python", "-m", "lastseat.official_cli", "prepare", "--run-id", $Run, "--model", $Model[0],
+               "--trials", "$Trials", "--effort", $Effort)
+        foreach ($t in $Task) { $a += @("--task", $t) }
+        Invoke-Eval $a
+        if (-not $Yes) { Write-Output "prepared only; add -Yes -Run $Run to ask the CLI"; exit 0 }
+        & python lastseat/cli_host.py "results/$Run"
+        $askExit = $LASTEXITCODE
+        Invoke-Eval @("python", "-m", "lastseat.official_cli", "grade", "results/$Run")
+        Invoke-Eval @("python", "-m", "lastseat.summary", "results/$Run")
+        exit $askExit
     }
     "dry-run" { Start-Db; Invoke-Eval ((Get-RunnerArgs 1) + "--dry-run") }
     "pilot" { Start-Db; Invoke-Eval (Get-RunnerArgs 1) }

@@ -614,3 +614,38 @@ instead, require an explicit `--new`.
 - Limitation to write up later (human decision 3): liveness checks only that
   fitting requests succeed, not that they could run in parallel; a coarse lock
   (t09: whole room instead of room-day) scores the same as the reference.
+
+## official-cli provider: Claude Code headless (`claude -p`) (2026-11-07)
+
+**Claude drafted**
+- `lastseat/cli_host.py` (host, stdlib only): one `claude -p` call per trial,
+  sequential. Flags checked against `claude --help` (CLI 2.1.319): prompt on
+  stdin, `--model <full name>`, `--effort high` (as the OpenRouter configs),
+  `--output-format json`, `--tools ""` (no tools: text only), `--safe-mode`,
+  `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`.
+  No `--system-prompt` (the CLI keeps its own; noted in run_meta) and no
+  `--bare` (it needs an API key, i.e. paid).
+- Guards: a fresh empty temp dir per call, which must still be empty after;
+  child env drops ANTHROPIC_*, CLAUDE*, OPENROUTER_*, GEMINI_*, GOOGLE_API_KEY,
+  LASTSEAT_* (this session had ANTHROPIC_BASE_URL set to a local proxy);
+  `claude auth status` must say authMethod claude.ai / firstParty before every
+  call; any CLI error, usage-limit message (in an error, or a short code-less
+  result) or 30-min timeout stops the run with no verdict (cell stays missing).
+- `lastseat/official_cli.py` (Docker): `prepare` (prompt = contract + task.md,
+  same as OpenRouter; needs --run-id or --new) and `grade`. Records CLI version,
+  models shown (`modelUsage`), date, reported cost (notional; cost_usd 0).
+- summary.md: one table per source (`## Source: official-cli` with CLI version,
+  command and system-prompt note); pass^k per cell when trials > 1; model shown
+  and date in the API table.
+- `.\run.ps1 official-cli -Model claude-opus-5-5 (-New | -Run <id>) [-Task ..]
+  [-Trials 3] [-Yes]`.
+- Tests (fake CLI, no real calls): flags, env scrubbing, auth rule, error and
+  usage-limit classification, a CLI writing into its dir, end-to-end grade and
+  summary, usage limit stops before the next call and the cell is re-asked
+  later, prepare never implicit.
+
+**Human to review**
+- `--effort high` (parity with OpenRouter `reasoning.effort: high`).
+- `--safe-mode` also hides your global CLAUDE.md/skills from the model: intended.
+- The usage-limit regex (cli_host.LIMIT_TEXT) is a heuristic; on a stop the
+  raw CLI stdout/stderr are kept in the trial folder.
