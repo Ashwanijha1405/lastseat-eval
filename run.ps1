@@ -20,7 +20,8 @@ param(
     [string[]]$Model,
     [switch]$Regrade,
     [int]$Trials = 3,
-    [string]$Effort = "high"
+    [string]$Effort = "high",
+    [ValidateSet("claude", "antigravity")][string]$Cli = "claude"
 )
 # No $ErrorActionPreference = "Stop": in Windows PowerShell 5.1 it turns docker's
 # ordinary stderr progress lines into fatal errors. Exit codes are checked instead.
@@ -61,6 +62,7 @@ switch ($Command) {
             ".\run.ps1 dry-run                           mock model returning the references, no API",
             ".\run.ps1 official-cli -Model claude-opus-5-5 (-New | -Run <id>) [-Task ..] [-Trials 3] [-Yes]",
             "                                            Claude Code headless (claude -p), one call at a time",
+            "  official-cli -Cli antigravity -Model gemini-3.8-flash-high ...  Gemini via Antigravity CLI (agy --print)",
             ".\run.ps1 pilot [-Yes]                      1 trial per model and task",
             ".\run.ps1 run [-Yes]                        5 trials",
             "  run/pilot options: -Config free|paid (default free) -Run <id> -New -From <pilot id>",
@@ -96,7 +98,7 @@ switch ($Command) {
         if (-not $Run) { Write-Output "official-cli needs -Run <id> (continue) or -New (start); never implicit"; exit 2 }
         Start-Db
         $a = @("python", "-m", "lastseat.official_cli", "prepare", "--run-id", $Run, "--model", $Model[0],
-               "--trials", "$Trials", "--effort", $Effort)
+               "--trials", "$Trials", "--effort", $Effort, "--cli", $Cli)
         foreach ($t in $Task) { $a += @("--task", $t) }
         Invoke-Eval $a
         if (-not $Yes) { Write-Output "prepared only; add -Yes -Run $Run to ask the CLI"; exit 0 }

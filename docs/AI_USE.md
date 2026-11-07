@@ -690,3 +690,42 @@ never conflict. t09 cannot tell that from the per-day reference.
   so the two requests share no day (a D1 -> D2 move would touch D1 too).
 - SERIALIZABLE+retry passes t10 although it conflicts constantly; the rule is
   "never wait", not "never conflict". Your call whether that is intended.
+
+## Gemini via Antigravity CLI (`agy --print`) (2026-11-07)
+
+**Why not Gemini CLI.** `@google/gemini-cli@0.67.0` was installed, but its
+docs (geminicli.com, banner) say: "Unpaid tier and Google One users: Gemini
+CLI was replaced by Antigravity CLI on June 18th, 2026." The human chose
+Antigravity CLI (agy 1.4.12, already installed and signed in).
+
+**Claude drafted**
+- `cli_host.py`: an `antigravity` adapter beside `claude`. Flags from `agy
+  --help` and antigravity.google/docs (cli/headless, permissions, settings):
+  `--print ""` + `--input-format stream-json` (prompt on stdin as one user
+  event), `--output-format stream-json` (model in `init`, tool steps visible),
+  `--model gemini-3.8-flash-high` (the only Gemini model `agy models` lists;
+  effort is in the id), `--disable-slash-commands`, `--print-timeout`, and
+  `--settings` with deny rules for every action namespace (read_file,
+  write_file, command, unsandboxed, read_url, execute_url, mcp) plus
+  `toolPermission: strict`. No flag removes tools from the model's list, so
+  denied attempts are counted (`tool_calls_denied`) and a tool that runs stops
+  the run (`tool_ran`).
+- Guards: empty temp dir per call; env drops GEMINI_*, GOOGLE_API_KEY,
+  GOOGLE_GENAI*, GOOGLE_CLOUD*, GOOGLE_APPLICATION_CREDENTIALS (an API key
+  would be a paid route); refuses if the user's agy settings set
+  `modelProvider`; stops on any non-SUCCESS status / quota text.
+- `official_cli prepare --cli antigravity`; `.\run.ps1 official-cli -Cli
+  antigravity -Model gemini-3.8-flash-high ...`. Tests with a fake agy.
+
+**Verified by Claude (2 tiny smoke calls, before the pilot)**
+- "Reply OK": model shown gemini-3.8-flash-high, ~8.5k input tokens (agy's own
+  system prompt and tool list).
+- "list files, create x.txt": run_command and write_file both refused
+  ("Matches user-configured deny rule"); directory stayed empty.
+- The docs' agentMode value "default" is rejected by agy (`unrecognized value`),
+  so agentMode is not set.
+
+**Human to review**
+- agy saves conversations under ~/.gemini/antigravity-cli (no flag to disable).
+- agy starts a background auto-updater (`agy --bg-updater`): the CLI version may
+  change between calls; each api.json records the version used.

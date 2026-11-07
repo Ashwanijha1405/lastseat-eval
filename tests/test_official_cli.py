@@ -137,3 +137,97 @@ def test_prepare_never_starts_a_run_implicitly(cli_run, capsys):
     assert official_cli.main(["prepare", "--model", "m", "--task", "t01_flash_sale"]) == 2
     assert official_cli.main(["prepare", "--run-id", "c", "--model", "other", "--slug", "opus",
                               "--trials", "2", "--task", "t01_flash_sale"]) == 2   # a different signature
+
+
+# --- Antigravity CLI (agy), for Gemini -----------------------------------------
+
+def _agy_out(response="```python\nx = 1\n```", status="SUCCESS", tools=(), error=None):
+    ev = [{"event": "init", "init": {"model": "gemini-3.8-flash-high"}}]
+    for name, state in tools:
+        ev.append({"event": "step_update", "step_update": {"step_type": "tool", "state": state, "tool_name": name}})
+    res = {"status": status, "response": response, "num_turns": 1,
+           "usage": {"input_tokens": 9, "output_tokens": 7, "thinking_tokens": 3}}
+    if error:
+        res["error"] = error
+    ev.append({"event": "result", "result": res})
+    return "\n".join(json.dumps(e) for e in ev) + "\n"
+
+
+def test_agy_denies_every_tool_namespace_and_reads_the_prompt_from_stdin():
+    cmd = cli_host.agy_command("agy", "gemini-3.8-flash-high")
+    settings = json.loads(cmd[cmd.index("--settings") + 1])
+    assert set(settings["permissions"]["deny"]) == {f"{a}(*)" for a in (
+        "read_file", "write_file", "command", "unsandboxed", "read_url", "execute_url", "mcp")}
+    assert settings["permissions"]["allow"] == [] and settings["toolPermission"] == "strict"
+    assert cmd[cmd.index("--input-format") + 1] == "stream-json" and cmd[cmd.index("--print") + 1] == ""
+    assert "--dangerously-skip-permissions" not in cmd
+    assert json.loads(cli_host.agy_stdin("hello")) == {"event": "user", "message": {"content": "hello"}}
+
+
+@pytest.mark.parametrize("rc, stdout, stderr, kind", [
+    (0, _agy_out(), "", None),
+    (0, _agy_out(tools=[("run_command", "ERROR"), ("write_file", "ERROR")]), "", None),   # denied: still graded
+    (0, _agy_out(tools=[("view_file", "DONE")]), "", "tool_ran"),
+    (1, _agy_out(status="ERROR", response="", error="RESOURCE_EXHAUSTED: quota exceeded"), "", "usage_limit"),
+    (1, "", "Error: authentication required", "cli_error"),
+    (1, "", "429 Too Many Requests", "usage_limit"),
+    (0, _agy_out(response="You have reached your daily quota."), "", "usage_limit"),
+    (0, _agy_out(response=" "), "", "cli_error"),
+])
+def test_agy_classify(rc, stdout, stderr, kind):
+    fields, why = cli_host.agy_classify(rc, stdout, stderr)
+    assert (why is None) if kind is None else why.startswith(kind)
+    if kind is None:
+        assert fields["models_shown"] == ["gemini-3.8-flash-high"] and fields["output_tokens"] == 7
+
+
+def test_agy_refuses_an_api_key_model_provider(tmp_path):
+    f = tmp_path / "settings.json"
+    f.write_text(json.dumps({"model": "Gemini 3.8 Flash (High)"}), encoding="utf-8")
+    assert cli_host.agy_preflight(f) is None
+    f.write_text(json.dumps({"modelProvider": "gemini"}), encoding="utf-8")
+    assert "modelProvider" in cli_host.agy_preflight(f)
+
+
+def test_child_environment_drops_google_keys_and_cloud_settings():
+    env = cli_host.child_env({"PATH": "x", "GOOGLE_API_KEY": "k", "GOOGLE_GENAI_USE_VERTEXAI": "1",
+                              "GOOGLE_CLOUD_PROJECT": "p", "GOOGLE_APPLICATION_CREDENTIALS": "c",
+                              "GEMINI_API_KEY": "k", "APPDATA": "a"})
+    assert env == {"PATH": "x", "APPDATA": "a"}
+
+
+FAKE_AGY = r'''
+import json, sys
+from pathlib import Path
+event = json.loads(sys.stdin.readline())
+assert event["event"] == "user" and len(event["message"]["content"]) > 500, "prompt must arrive on stdin"
+assert not any(Path(".").iterdir()), "must run in an empty directory"
+code = Path(sys.argv[1]).read_text()
+print(json.dumps({"event": "init", "init": {"model": "gemini-3.8-flash-high"}}))
+print(json.dumps({"event": "step_update", "step_update": {"step_type": "tool", "state": "ERROR", "tool_name": "view_file"}}))
+print(json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1,
+      "response": "```python\n" + code + "```\n", "usage": {"input_tokens": 10, "output_tokens": 20}}}))
+'''
+
+
+def test_end_to_end_with_a_fake_agy(tmp_path, monkeypatch):
+    results = tmp_path / "results"
+    results.mkdir()
+    monkeypatch.setattr(official_cli, "RESULTS", results)
+    fake = tmp_path / "fake_agy.py"
+    fake.write_text(FAKE_AGY, encoding="utf-8")
+    ref = TASKS_DIR / "t01_flash_sale" / "reference.py"
+    monkeypatch.setattr(cli_host, "agy_exe", lambda: "agy")
+    monkeypatch.setattr(cli_host, "cli_version", lambda exe: "1.4.12")
+    monkeypatch.setattr(cli_host, "agy_preflight", lambda: None)
+    monkeypatch.setattr(cli_host, "agy_command", lambda exe, model: [sys.executable, str(fake), str(ref)])
+    assert official_cli.main(["prepare", "--run-id", "g", "--cli", "antigravity", "--model", "gemini-3.8-flash-high",
+                              "--trials", "1", "--task", "t01_flash_sale"]) == 0
+    run_dir = results / "g"
+    assert cli_host.run(run_dir) == 0 and official_cli.grade(run_dir) == 0
+    meta = json.loads((run_dir / "run_meta.json").read_text(encoding="utf-8"))
+    assert meta["config"] == "official-cli:antigravity" and meta["cli"]["name"] == "antigravity"
+    assert "Antigravity" in meta["cli"]["system_prompt_note"]
+    v = json.loads((run_dir / "gemini-3.8-flash-high" / "t01_flash_sale" / "trial_1" / "verdict.json")
+                   .read_text(encoding="utf-8"))
+    assert v["passed"] is True and v["api"]["tool_calls_denied"] == 1 and v["api"]["cli"] == "antigravity"

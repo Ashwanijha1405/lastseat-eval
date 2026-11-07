@@ -1,4 +1,4 @@
-"""Docker side of the official-CLI provider (claude -p): prepare a run, grade its answers.
+"""Docker side of the official-CLI provider (claude -p, agy --print): prepare a run, grade its answers.
 
     python -m lastseat.official_cli prepare (--run-id <id> | --new) --model claude-opus-5-5 \
         --trials 3 --task t01_flash_sale ...
@@ -34,7 +34,8 @@ def prepare(args: argparse.Namespace) -> int:
     run_dir = RESULTS / run_id
     meta_file = run_dir / "run_meta.json"
     slug = args.slug or args.model
-    signature = {"config": SOURCE, "models": [args.model], "tasks": [t.id for t in tasks],
+    config = SOURCE if args.cli == "claude" else f"{SOURCE}:{args.cli}"
+    signature = {"config": config, "models": [args.model], "tasks": [t.id for t in tasks],
                  "trials": args.trials, "dry_run": False}
     if meta_file.exists():
         meta = json.loads(meta_file.read_text(encoding="utf-8"))
@@ -44,10 +45,12 @@ def prepare(args: argparse.Namespace) -> int:
     else:
         meta = {"run_id": run_id, "source": SOURCE, "signature": signature,
                 "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-                "git_commit": git_commit(), "dry_run": False, "trials": args.trials, "config": SOURCE,
+                "git_commit": git_commit(), "dry_run": False, "trials": args.trials, "config": config,
                 "tier": "subscription", "tasks": [t.id for t in tasks],
                 "models": [{"slug": slug, "id": args.model, "source": SOURCE}],
-                "cli": {"effort": args.effort}, "postgres_version": postgres_version(),
+                "cli": {"name": args.cli,
+                        "effort": args.effort if args.cli == "claude" else "set by the model id"},
+                "postgres_version": postgres_version(),
                 "scheduler_caps": SCHEDULER_CAPS, "spent_usd": 0.0, "complete": False, "sessions": []}
     for t in tasks:
         for n in range(1, args.trials + 1):
@@ -99,7 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     pr = sub.add_parser("prepare", help="write run_meta.json and every trial's prompt.txt")
     pr.add_argument("--run-id")
     pr.add_argument("--new", action="store_true")
-    pr.add_argument("--model", required=True, help="full model name passed to claude --model")
+    pr.add_argument("--cli", default="claude", choices=["claude", "antigravity"],
+                    help="claude (claude -p) or antigravity (agy --print, for Gemini)")
+    pr.add_argument("--model", required=True, help="full model name passed to the CLI's --model")
     pr.add_argument("--slug", help="results folder name (default: the model name)")
     pr.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
     pr.add_argument("--trials", type=int, default=3)
