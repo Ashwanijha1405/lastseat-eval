@@ -1,0 +1,73 @@
+The rule this has to enforce spans rows: no shard may end up without an active replica. Two drains on different nodes could each check, each see the other's replica still active, and both deactivate. That is a write-skew race. I prevent it by locking the affected shard rows before checking.
+
+**Approach**
+
+1. Lock (`SELECT … FOR UPDATE`) the `shards` rows for every shard that has a replica on this node. The locks are taken in ascending shard id order, so all drains acquire them in the same global order and cannot deadlock each other.
+2. Drains that share a shard run one after another. Drains with no shared shard don't block each other at all.
+3. After the locks are held, check the shards. Under READ COMMITTED each statement takes a fresh snapshot, so the check sees every earlier drain on those shards, because that drain committed before releasing its locks.
+4. Then deactivate the node's replicas and commit, or roll back and return `False`.
+
+**Why drains that fit always succeed:** draining only ever sets replicas to inactive. Suppose a set of drains all succeed when run one after another. Then every affected shard keeps an active replica on a node outside that set, and those replicas stay active whatever order the drains run in. So serializing the drains on the shards they share never causes a refusal that wouldn't happen when they run one at a time.
+
+`migrate` adds an index on `replicas(node_id)` so finding a node's replicas is fast. The primary key `(shard_id, node_id)` already covers the per-shard lookups. If a deadlock or serialization error happens anyway, the code rolls back and retries, up to 8 attempts of 5 calls each, which stays under the 60-call limit.
+
+```python
+import psycopg.errors as errors
+
+
+def migrate(db) -> None:
+    db.execute("CREATE INDEX IF NOT EXISTS replicas_node_id_idx ON replicas (node_id, shard_id)")
+
+
+def drain_node(db, node_id: str) -> bool:
+    attempts = 8
+    for attempt in range(attempts):
+        try:
+            db.begin("read committed")
+            # Lock every shard this node holds a replica of, in a global
+            # (ascending id) order so concurrent drains never deadlock.
+            db.execute(
+                """
+                SELECT s.id
+                FROM shards s
+                WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %(n)s)
+                ORDER BY s.id
+                FOR UPDATE OF s
+                """,
+                {"n": node_id},
+            )
+            # Fresh snapshot (READ COMMITTED): sees all drains that held these locks before us.
+            rows = db.execute(
+                """
+                SELECT 1
+                FROM replicas r
+                WHERE r.node_id = %(n)s
+                  AND r.active
+                  AND NOT EXISTS (
+                      SELECT 1 FROM replicas o
+                      WHERE o.shard_id = r.shard_id
+                        AND o.node_id <> %(n)s
+                        AND o.active
+                  )
+                LIMIT 1
+                """,
+                {"n": node_id},
+            )
+            if rows:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE replicas SET active = false WHERE node_id = %(n)s AND active",
+                {"n": node_id},
+            )
+            db.commit()
+            return True
+        except (errors.DeadlockDetected, errors.SerializationFailure, errors.LockNotAvailable):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt == attempts - 1:
+                raise
+    return False
+```

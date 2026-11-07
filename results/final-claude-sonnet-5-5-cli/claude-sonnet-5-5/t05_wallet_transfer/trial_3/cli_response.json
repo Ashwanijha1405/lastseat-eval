@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 9962,
+  "stop_reason": "end_turn",
+  "session_id": "7f2d7d6d-f5a2-424f-8a1a-fb86f5a7c18b",
+  "total_cost_usd": 0.0148331,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 363,
+    "cache_read_input_tokens": 4571,
+    "output_tokens": 1292,
+    "output_tokens_details": {
+      "thinking_tokens": 516
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 363,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1292,
+        "cache_read_input_tokens": 4571,
+        "cache_creation_input_tokens": 363,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 363
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1292,
+      "cacheReadInputTokens": 4571,
+      "cacheCreationInputTokens": 363,
+      "webSearchRequests": 0,
+      "costUSD": 0.0148331,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 516,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 363,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nimport psycopg.errors\n\n\ndef transfer(db, from_id: int, to_id: int, amount: int) -> bool:\n    for _ in range(5):\n        try:\n            db.begin(\"read committed\")\n            # Lock both rows in a fixed (id) order so opposite-direction\n            # transfers cannot deadlock; the sort happens before row locking.\n            rows = db.execute(\n                \"SELECT id, balance FROM accounts \"\n                \"WHERE id IN (%s, %s) ORDER BY id FOR UPDATE\",\n                (from_id, to_id),\n            )\n            balances = {r[0]: r[1] for r in rows}\n            if from_id not in balances or to_id not in balances:\n                db.rollback()\n                return False\n            if balances[from_id] < amount:\n                db.rollback()\n                return False\n            db.execute(\n                \"UPDATE accounts SET balance = balance - %s WHERE id = %s\",\n                (amount, from_id),\n            )\n            db.execute(\n                \"UPDATE accounts SET balance = balance + %s WHERE id = %s\",\n                (amount, to_id),\n            )\n            db.commit()\n            return True\n        except (\n            psycopg.errors.SerializationFailure,\n            psycopg.errors.DeadlockDetected,\n        ):\n            db.rollback()\n            continue\n    return False\n```\n\nHow it works:\n- Both rows are locked with `SELECT ... ORDER BY id FOR UPDATE` in one statement, so every transfer takes locks in the same order. This prevents deadlocks between Alice\u2192Bob and Bob\u2192Alice.\n- In read committed mode, the locked rows return the latest committed balances. The balance check and the two updates therefore run against current values, so no balance goes negative and no update is lost.\n- Money moves only inside one transaction, so the total never changes. A refused transfer rolls back and changes nothing.\n- The retry loop is a safety net for deadlock or serialization errors. It makes at most 5 attempts of 5 `db` calls each, which stays within the 60-call limit.\n\nI haven't run this against a PostgreSQL server.\n\nOne limit: if a transfer that depends on an earlier incoming transfer (for example Bob\u2192Alice when Bob starts at 0) runs before it, it correctly returns `False`, because the sequential order that makes it succeed was not the order of execution.",
+  "ttft_ms": 5270,
+  "type": "result",
+  "duration_ms": 10145,
+  "uuid": "a10d1267-8be9-4fd7-a24d-ae2dace58fad",
+  "ttft_stream_ms": 1375,
+  "time_to_request_ms": 183,
+  "first_content_frame_ms": 1375,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

@@ -1,0 +1,70 @@
+```python
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    # Backstop: enforce uniqueness at the database level. If pre-existing data
+    # already contains duplicates, the index can't be built; the advisory-lock
+    # logic in create_payment still guarantees no new duplicates.
+    try:
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uq "
+            "ON payments (idempotency_key)"
+        )
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    last_err = None
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            # Serialize all attempts with the same key. The lock is released at
+            # commit/rollback; each later statement takes a fresh snapshot in
+            # READ COMMITTED, so it sees the winner's committed row.
+            db.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (idempotency_key,),
+            )
+            rows = db.execute(
+                "SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1",
+                (idempotency_key,),
+            )
+            if rows:
+                pid = rows[0][0]
+            else:
+                rows = db.execute(
+                    "INSERT INTO payments (idempotency_key, customer_id, amount) "
+                    "VALUES (%s, %s, %s) RETURNING id",
+                    (idempotency_key, customer_id, amount),
+                )
+                pid = rows[0][0]
+            db.commit()
+            return int(pid)
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as e:
+            last_err = e
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    # Final fallback: the row must exist by now if a unique violation occurred.
+    rows = db.execute(
+        "SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1",
+        (idempotency_key,),
+    )
+    return int(rows[0][0])
+```
+
+How it works:
+- A transaction-level advisory lock keyed on the idempotency key serializes concurrent attempts with the same key. Different keys don't block each other, apart from rare hash collisions that only cause brief waiting.
+- Under READ COMMITTED, the `SELECT` after the lock sees the previous holder's committed row, so a waiting attempt returns the existing `id` instead of inserting.
+- `migrate` adds a unique index as a database-level backstop. If existing data already has duplicate keys, the index build fails and is skipped, and the lock still prevents new duplicates.
+- The retry loop is bounded to 10 iterations, well under the 60-call limit, and handles unique-violation, serialization and deadlock errors.

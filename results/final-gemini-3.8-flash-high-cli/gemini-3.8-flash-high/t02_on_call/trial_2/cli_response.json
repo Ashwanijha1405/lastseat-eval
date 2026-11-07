@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_doctors_shift_on_call ON doctors (shift_id, on_call)\"\n    )\n\n\ndef go_off_call(db, doctor_id: int) -> bool:\n    for _ in range(10):\n        try:\n            db.begin(\"read committed\")\n\n            doctor_rows = db.execute(\n                \"SELECT shift_id FROM doctors WHERE id = %s\",\n                (doctor_id,),\n            )\n            if not doctor_rows:\n                db.rollback()\n                return False\n\n            shift_id = doctor_rows[0][0]\n\n            # Lock the shift row to serialize concurrent rota changes within the same shift.\n            db.execute(\n                \"SELECT id FROM shifts WHERE id = %s FOR UPDATE\",\n                (shift_id,),\n            )\n\n            # Atomically verify another doctor is on call before setting this doctor off call.\n            updated = db.execute(\n                \"\"\"\n                UPDATE doctors\n                SET on_call = false\n                WHERE id = %(doctor_id)s\n                  AND on_call = true\n                  AND EXISTS (\n                      SELECT 1\n                      FROM doctors\n                      WHERE shift_id = %(shift_id)s\n                        AND id <> %(doctor_id)s\n                        AND on_call = true\n                  )\n                RETURNING 1\n                \"\"\",\n                {\"doctor_id\": doctor_id, \"shift_id\": shift_id},\n            )\n\n            db.commit()\n            return len(updated) > 0\n        except errors.Error:\n            try:\n                db.rollback()\n            except errors.Error:\n                pass\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 28277,
+    "output_tokens": 41327,
+    "thinking_tokens": 40890,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

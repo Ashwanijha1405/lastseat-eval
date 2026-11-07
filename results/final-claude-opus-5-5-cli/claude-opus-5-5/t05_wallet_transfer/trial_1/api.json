@@ -1,0 +1,19 @@
+{
+  "source": "official-cli",
+  "cli": "claude",
+  "model_id": "claude-opus-5-5",
+  "models_shown": [
+    "claude-opus-5-5"
+  ],
+  "cli_version": "2.1.319 (Claude Code)",
+  "date_utc": "2026-11-07T11:23:45+00:00",
+  "finish_reason": "end_turn",
+  "completion_tokens": 2261,
+  "prompt_tokens": 2,
+  "cost_usd": 0.0,
+  "cli_reported_cost_usd": 0.0728584,
+  "seconds": 22.81,
+  "num_turns": 1,
+  "attempts": 1,
+  "provider": "claude.ai (claude -p)"
+}

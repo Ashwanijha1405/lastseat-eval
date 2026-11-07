@@ -1,0 +1,129 @@
+Every operation takes a lock on the department's row before it reads or writes anything. The plan:
+
+- **One department lock first.** Each function runs in `read committed` and first runs `SELECT ... FROM departments WHERE id = ... FOR UPDATE`.
+  - `approve_expense` and `edit_expense` first look up the expense's `department_id` without a lock. That is safe because the department never changes.
+  - So every request that affects a department's approved total or budget runs one at a time for that department. The budget rule always holds.
+- **Fresh reads after the lock.** In `read committed`, each statement sees the latest committed data. Once the lock is held, the status, amount, approved total and budget it reads are current. Each request behaves as if it ran alone, so any set of requests that would all succeed one after another also succeeds when they arrive together.
+- **Edits to pending expenses also lock.** Without the lock, a concurrent approval could check the old amount while the edit writes a larger one. Together they could exceed the budget.
+- **No deadlocks.** Each transaction locks exactly one department row, then at most one expense row. Every writer of an expense row already holds that expense's department lock, so lock order is the same everywhere.
+- **Bounded retry as a safety net.** A short retry loop catches serialization or deadlock errors. It is not expected to trigger.
+
+```python
+import psycopg.errors
+
+_RETRYABLE = (
+    psycopg.errors.SerializationFailure,
+    psycopg.errors.DeadlockDetected,
+    psycopg.errors.LockNotAvailable,
+)
+_MAX_ATTEMPTS = 6
+
+
+def _run(db, body):
+    last_exc = None
+    for _ in range(_MAX_ATTEMPTS):
+        try:
+            db.begin("read committed")
+            result = body()
+            db.commit()
+            return result
+        except _RETRYABLE as e:
+            last_exc = e
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+    raise last_exc
+
+
+def _lock_dept(db, dept_id):
+    rows = db.execute(
+        "SELECT budget FROM departments WHERE id = %s FOR UPDATE", (dept_id,)
+    )
+    return rows[0][0]
+
+
+def _approved_total_excluding(db, dept_id, expense_id):
+    rows = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+        "WHERE department_id = %s AND status = 'approved' AND id <> %s",
+        (dept_id, expense_id),
+    )
+    return int(rows[0][0])
+
+
+def _dept_of_expense(db, expense_id):
+    rows = db.execute(
+        "SELECT department_id FROM expenses WHERE id = %s", (expense_id,)
+    )
+    return rows[0][0]
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    dept_id = _dept_of_expense(db, expense_id)
+
+    def body():
+        budget = _lock_dept(db, dept_id)
+        rows = db.execute(
+            "SELECT amount, status FROM expenses WHERE id = %s FOR UPDATE",
+            (expense_id,),
+        )
+        amount, status = rows[0]
+        if status != "pending":
+            return False
+        others = _approved_total_excluding(db, dept_id, expense_id)
+        if others + amount > budget:
+            return False
+        db.execute(
+            "UPDATE expenses SET status = 'approved' WHERE id = %s", (expense_id,)
+        )
+        return True
+
+    return _run(db, body)
+
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    dept_id = _dept_of_expense(db, expense_id)
+
+    def body():
+        budget = _lock_dept(db, dept_id)
+        rows = db.execute(
+            "SELECT status FROM expenses WHERE id = %s FOR UPDATE", (expense_id,)
+        )
+        status = rows[0][0]
+        if status == "approved":
+            others = _approved_total_excluding(db, dept_id, expense_id)
+            if others + new_amount > budget:
+                return False
+        db.execute(
+            "UPDATE expenses SET amount = %s WHERE id = %s", (new_amount, expense_id)
+        )
+        return True
+
+    return _run(db, body)
+
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    def body():
+        _lock_dept(db, dept_id)
+        rows = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+            "WHERE department_id = %s AND status = 'approved'",
+            (dept_id,),
+        )
+        total = int(rows[0][0])
+        if total > new_budget:
+            return False
+        db.execute(
+            "UPDATE departments SET budget = %s WHERE id = %s", (new_budget, dept_id)
+        )
+        return True
+
+    return _run(db, body)
+```

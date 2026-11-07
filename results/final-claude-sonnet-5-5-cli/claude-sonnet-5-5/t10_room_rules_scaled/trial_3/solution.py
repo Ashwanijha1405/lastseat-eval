@@ -1,0 +1,120 @@
+from datetime import datetime, timedelta, timezone
+
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_starts_idx "
+        "ON bookings (room_id, starts_at)"
+    )
+
+
+def _day(dt):
+    d = dt.astimezone(timezone.utc)
+    ds = d.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ds, ds + timedelta(days=1), ds.date().toordinal()
+
+
+def _lock(db, room_id, ordinal):
+    # One lock per (room, UTC day): different rooms/days never contend.
+    db.execute("SELECT pg_advisory_xact_lock(%s, %s)", (room_id, ordinal))
+
+
+_RETRYABLE = (
+    psycopg.errors.DeadlockDetected,
+    psycopg.errors.SerializationFailure,
+    psycopg.errors.LockNotAvailable,
+)
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    ds, de, ordinal = _day(starts_at)
+    for _ in range(5):
+        try:
+            db.begin()
+            _lock(db, room_id, ordinal)
+            rows = db.execute(
+                "SELECT count(*), "
+                "coalesce(bool_or(starts_at < %(e)s AND ends_at > %(s)s), false) "
+                "FROM bookings "
+                "WHERE room_id = %(r)s AND starts_at >= %(ds)s AND starts_at < %(de)s",
+                {"e": ends_at, "s": starts_at, "r": room_id, "ds": ds, "de": de},
+            )
+            cnt, overlap = rows[0]
+            if overlap or cnt >= 3:
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) "
+                "VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime,
+               new_ends_at: datetime) -> bool:
+    nds, nde, nord = _day(new_starts_at)
+    for _ in range(5):
+        try:
+            rows = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s",
+                (booking_id,),
+            )
+            if not rows:
+                return False
+            room_id, old_start = rows[0]
+            _, _, oord = _day(old_start)
+
+            db.begin()
+            for ordinal in sorted({oord, nord}):  # consistent order: no deadlocks
+                _lock(db, room_id, ordinal)
+
+            cur = db.execute(
+                "SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,),
+            )
+            if not cur:
+                db.rollback()
+                return False
+            c_room, c_start = cur[0]
+            if c_room != room_id or _day(c_start)[2] != oord:
+                # Moved by someone else before we got the locks; start over.
+                db.rollback()
+                continue
+
+            cnt, overlap = db.execute(
+                "SELECT count(*), "
+                "coalesce(bool_or(starts_at < %(e)s AND ends_at > %(s)s), false) "
+                "FROM bookings "
+                "WHERE room_id = %(r)s AND id <> %(id)s "
+                "AND starts_at >= %(ds)s AND starts_at < %(de)s",
+                {"e": new_ends_at, "s": new_starts_at, "r": room_id,
+                 "id": booking_id, "ds": nds, "de": nde},
+            )[0]
+            if overlap or cnt >= 3:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id),
+            )
+            db.commit()
+            return True
+        except _RETRYABLE:
+            db.rollback()
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    # Deleting only frees capacity, so no day lock is needed.
+    rows = db.execute(
+        "DELETE FROM bookings WHERE id = %s RETURNING id", (booking_id,)
+    )
+    return bool(rows)

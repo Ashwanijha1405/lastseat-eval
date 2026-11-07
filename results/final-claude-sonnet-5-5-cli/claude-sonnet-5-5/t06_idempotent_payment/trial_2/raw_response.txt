@@ -1,0 +1,67 @@
+```python
+import psycopg
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    # Backstop: enforce uniqueness at the database level.
+    # If legacy duplicates exist, the index can't be built; the function's
+    # advisory-lock path still guarantees no new duplicates are created.
+    try:
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uidx "
+            "ON payments (idempotency_key)"
+        )
+    except psycopg.errors.Error:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    for _ in range(5):
+        try:
+            db.begin("read committed")
+            # Serialize all attempts that share the same key.
+            db.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (idempotency_key,),
+            )
+            rows = db.execute(
+                "SELECT id FROM payments WHERE idempotency_key = %s "
+                "ORDER BY id LIMIT 1",
+                (idempotency_key,),
+            )
+            if rows:
+                payment_id = rows[0][0]
+            else:
+                rows = db.execute(
+                    "INSERT INTO payments (idempotency_key, customer_id, amount) "
+                    "VALUES (%s, %s, %s) RETURNING id",
+                    (idempotency_key, customer_id, amount),
+                )
+                payment_id = rows[0][0]
+            db.commit()
+            return int(payment_id)
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ):
+            db.rollback()
+            continue
+    # Final fallback: the row should exist by now.
+    rows = db.execute(
+        "SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1",
+        (idempotency_key,),
+    )
+    return int(rows[0][0])
+```
+
+How it works:
+- A transaction-scoped advisory lock keyed on the idempotency key makes concurrent attempts with the same key run one after another. Different keys don't block each other.
+- Under read committed, each statement gets a fresh snapshot. The attempt that waited on the lock therefore sees the row committed by the earlier attempt and returns its `id` instead of inserting.
+- `migrate` adds a unique index on `idempotency_key` as a database-level guarantee. A unique violation, if one ever occurred, is retried with a bounded loop and then finds the existing row.
+
+I haven't run this against a PostgreSQL server.

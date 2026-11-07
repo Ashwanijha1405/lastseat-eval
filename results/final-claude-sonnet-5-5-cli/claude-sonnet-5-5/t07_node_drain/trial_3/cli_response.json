@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 17349,
+  "stop_reason": "end_turn",
+  "session_id": "8af76b15-4bdc-4cda-8aca-c9913a16f419",
+  "total_cost_usd": 0.0232464,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 361,
+    "cache_read_input_tokens": 4684,
+    "output_tokens": 2133,
+    "output_tokens_details": {
+      "thinking_tokens": 1294
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 361,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2133,
+        "cache_read_input_tokens": 4684,
+        "cache_creation_input_tokens": 361,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 361
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 2133,
+      "cacheReadInputTokens": 4684,
+      "cacheCreationInputTokens": 361,
+      "webSearchRequests": 0,
+      "costUSD": 0.0232464,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1294,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 361,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nimport psycopg.errors\nfrom psycopg.errors import DeadlockDetected, SerializationFailure\n\n\ndef drain_node(db, node_id: str) -> bool:\n    for _ in range(5):\n        try:\n            db.begin(\"read committed\")\n\n            # Serialize drains that share a shard by locking the shard rows\n            # in a consistent order (ascending id), so there are no deadlocks.\n            # A drain that conflicts waits for the other one and then sees its result.\n            db.execute(\n                \"\"\"\n                SELECT id FROM shards\n                WHERE id IN (SELECT shard_id FROM replicas\n                             WHERE node_id = %(n)s AND active)\n                ORDER BY id\n                FOR UPDATE\n                \"\"\",\n                {\"n\": node_id},\n            )\n\n            # New statement after locks are held: sees every committed drain.\n            rows = db.execute(\n                \"\"\"\n                SELECT 1\n                FROM replicas r\n                WHERE r.node_id = %(n)s AND r.active\n                  AND NOT EXISTS (\n                      SELECT 1 FROM replicas o\n                      WHERE o.shard_id = r.shard_id\n                        AND o.node_id <> %(n)s\n                        AND o.active\n                  )\n                LIMIT 1\n                \"\"\",\n                {\"n\": node_id},\n            )\n            if rows:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE replicas SET active = false WHERE node_id = %(n)s AND active\",\n                {\"n\": node_id},\n            )\n            db.commit()\n            return True\n        except (DeadlockDetected, SerializationFailure):\n            db.rollback()\n            continue\n    return False\n```\n\n**How it works:** each drain first locks, in ascending id order, the `shards` rows for every shard where this node has an active replica. Two drains that touch a common shard therefore queue behind each other instead of both reading the same stale \"other replica is active\" state. The ordered locking also prevents deadlocks.\n\nOnce the locks are held, a fresh statement checks whether any of those shards has no active replica on another node. If one does, the drain rolls back and returns `False` with nothing changed. Otherwise a single `UPDATE` deactivates all of the node's replicas.\n\nDrains on shards that don't overlap don't block each other. For overlapping drains, the second one waits and then sees the first one's committed result. Both can succeed when a valid sequential order exists, and a pair that would leave a shard with no active replica can't both return `True`.\n\nI haven't run this against a PostgreSQL server.",
+  "ttft_ms": 12164,
+  "type": "result",
+  "duration_ms": 17520,
+  "uuid": "ba29fa90-32cc-46c3-a73e-2a1e71115870",
+  "ttft_stream_ms": 1308,
+  "time_to_request_ms": 170,
+  "first_content_frame_ms": 1308,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

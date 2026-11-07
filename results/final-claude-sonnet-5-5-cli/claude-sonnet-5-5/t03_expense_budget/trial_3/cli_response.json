@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 8998,
+  "stop_reason": "end_turn",
+  "session_id": "4ace7a80-d9ee-43a7-8518-49ffe599d0cf",
+  "total_cost_usd": 0.013706900000000001,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 363,
+    "cache_read_input_tokens": 4709,
+    "output_tokens": 1178,
+    "output_tokens_details": {
+      "thinking_tokens": 404
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 363,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1178,
+        "cache_read_input_tokens": 4709,
+        "cache_creation_input_tokens": 363,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 363
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1178,
+      "cacheReadInputTokens": 4709,
+      "cacheCreationInputTokens": 363,
+      "webSearchRequests": 0,
+      "costUSD": 0.013706900000000001,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 404,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 363,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nimport psycopg.errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS expenses_dept_status_idx \"\n        \"ON expenses (department_id, status)\"\n    )\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    # department_id never changes, so it can be read without a lock.\n    rows = db.execute(\n        \"SELECT department_id FROM expenses WHERE id = %s\", (expense_id,)\n    )\n    if not rows:\n        return False\n    dept_id = rows[0][0]\n\n    db.begin(\"read committed\")\n    try:\n        # Serialize all approvals for this department by locking its row.\n        # Only one lock is taken per transaction, so deadlocks can't occur.\n        # Statements after the lock get a fresh snapshot (read committed),\n        # so they see every approval committed by earlier lock holders.\n        brow = db.execute(\n            \"SELECT budget FROM departments WHERE id = %s FOR UPDATE\",\n            (dept_id,),\n        )\n        budget = brow[0][0]\n\n        res = db.execute(\n            \"\"\"\n            UPDATE expenses e\n               SET status = 'approved'\n             WHERE e.id = %(eid)s\n               AND e.status = 'pending'\n               AND e.amount + (\n                     SELECT COALESCE(SUM(a.amount), 0)\n                       FROM expenses a\n                      WHERE a.department_id = %(did)s\n                        AND a.status = 'approved'\n                   ) <= %(budget)s\n            RETURNING e.id\n            \"\"\",\n            {\"eid\": expense_id, \"did\": dept_id, \"budget\": budget},\n        )\n        db.commit()\n        return bool(res)\n    except Exception:\n        db.rollback()\n        raise\n```\n\nEach approval locks its department's row with `FOR UPDATE`, so approvals for the same department run one at a time while different departments stay parallel. Under read committed, the `UPDATE` takes its snapshot after the lock is granted, so its sum includes every approval committed by earlier lock holders. That keeps the total within budget (rule 1). It also means an approval that fits in sequence never fails because of concurrency, and each request takes only one lock, so it can't deadlock (rule 2). I haven't run this against a PostgreSQL server.",
+  "ttft_ms": 4428,
+  "type": "result",
+  "duration_ms": 9183,
+  "uuid": "1e6358c9-0c26-480f-a300-7207771abdc6",
+  "ttft_stream_ms": 1378,
+  "time_to_request_ms": 178,
+  "first_content_frame_ms": 1378,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

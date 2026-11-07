@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 9493,
+  "stop_reason": "end_turn",
+  "session_id": "32bc12a3-c98b-468a-a7b8-85465cbda469",
+  "total_cost_usd": 0.0234532,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 359,
+    "cache_read_input_tokens": 4666,
+    "output_tokens": 982,
+    "output_tokens_details": {
+      "thinking_tokens": 331
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 359,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 982,
+        "cache_read_input_tokens": 4666,
+        "cache_creation_input_tokens": 359,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 359
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 982,
+      "cacheReadInputTokens": 4666,
+      "cacheCreationInputTokens": 359,
+      "webSearchRequests": 0,
+      "costUSD": 0.0234532,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 331,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 359,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "A single atomic statement handles this. The conditional `UPDATE ... WHERE stock >= qty` takes the product's row lock. Under READ COMMITTED, a concurrent buyer waiting on that lock re-checks the `WHERE` clause against the freshly committed stock once the lock is released. That means:\n\n- Stock can never go negative.\n- A purchase that still fits after earlier ones always succeeds. There is no serialization error or refusal just because another buyer was active.\n\nThe order insert is chained to the update in the same statement through a data-modifying CTE. Both happen together or neither does, so stock plus ordered quantity is always conserved. Each statement locks only one row, so deadlocks can't happen. The bounded retry is only a safety net for unexpected transient errors.\n\n```python\nimport psycopg.errors as errors\n\n_RETRYABLE = (\n    errors.SerializationFailure,\n    errors.DeadlockDetected,\n    errors.LockNotAvailable,\n)\n\n_SQL = \"\"\"\nWITH upd AS (\n    UPDATE products\n       SET stock = stock - %(qty)s\n     WHERE id = %(pid)s\n       AND stock >= %(qty)s\n    RETURNING id\n)\nINSERT INTO orders (product_id, qty)\nSELECT id, %(qty)s FROM upd\nRETURNING id\n\"\"\"\n\n\ndef purchase(db, product_id: int, qty: int) -> bool:\n    params = {\"pid\": product_id, \"qty\": qty}\n    last_exc = None\n    for _ in range(15):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(_SQL, params)\n            db.commit()\n            return len(rows) == 1\n        except _RETRYABLE as e:\n            last_exc = e\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n        except Exception:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            raise\n    raise last_exc\n```",
+  "ttft_ms": 4106,
+  "type": "result",
+  "duration_ms": 9639,
+  "uuid": "d7455e0c-e5ed-4eaf-aa26-550abce526f1",
+  "ttft_stream_ms": 1003,
+  "time_to_request_ms": 146,
+  "first_content_frame_ms": 1004,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

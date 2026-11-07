@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 17597,
+  "stop_reason": "end_turn",
+  "session_id": "cd41ab25-9691-4d03-a235-3a5a94c76dcd",
+  "total_cost_usd": 0.0281156,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 361,
+    "cache_read_input_tokens": 5176,
+    "output_tokens": 2615,
+    "output_tokens_details": {
+      "thinking_tokens": 1011
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 361,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2615,
+        "cache_read_input_tokens": 5176,
+        "cache_creation_input_tokens": 361,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 361
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 2615,
+      "cacheReadInputTokens": 5176,
+      "cacheCreationInputTokens": 361,
+      "webSearchRequests": 0,
+      "costUSD": 0.0281156,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1011,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 361,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The three functions serialize on a per-room lock: every request first locks the room's row in `rooms`, then does its checks and writes. That makes the rules hold under concurrency, and requests that fit never fail because of another request. Each request locks exactly one room, so deadlocks can't occur. I haven't run this against a PostgreSQL server.\n\n```python\nfrom __future__ import annotations\n\nfrom datetime import datetime\n\n\ndef _lock_room(db, room_id: int) -> None:\n    # Serializes all writers of this room. Each transaction locks only one room,\n    # so no deadlocks. Under READ COMMITTED every later statement sees the\n    # latest committed data once the lock is held.\n    db.execute(\n        \"SELECT 1 FROM rooms WHERE id = %(r)s FOR NO KEY UPDATE\",\n        {\"r\": room_id},\n    )\n\n\ndef book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    db.begin(\"read committed\")\n    try:\n        _lock_room(db, room_id)\n        rows = db.execute(\n            \"\"\"\n            INSERT INTO bookings (room_id, starts_at, ends_at)\n            SELECT %(r)s, %(s)s::timestamptz, %(e)s::timestamptz\n            WHERE NOT EXISTS (\n                SELECT 1 FROM bookings b\n                WHERE b.room_id = %(r)s\n                  AND b.starts_at < %(e)s::timestamptz\n                  AND b.ends_at > %(s)s::timestamptz\n            )\n            AND (\n                SELECT count(*) FROM bookings b\n                WHERE b.room_id = %(r)s\n                  AND (b.starts_at AT TIME ZONE 'UTC')::date\n                      = (%(s)s::timestamptz AT TIME ZONE 'UTC')::date\n            ) < 3\n            RETURNING id\n            \"\"\",\n            {\"r\": room_id, \"s\": starts_at, \"e\": ends_at},\n        )\n        ok = bool(rows)\n        db.commit()\n        return ok\n    except BaseException:\n        db.rollback()\n        raise\n\n\ndef reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:\n    # A booking never changes room, so the room can be read without a lock.\n    rows = db.execute(\"SELECT room_id FROM bookings WHERE id = %(i)s\", {\"i\": booking_id})\n    if not rows:\n        return False\n    room_id = rows[0][0]\n\n    db.begin(\"read committed\")\n    try:\n        _lock_room(db, room_id)\n        # Re-check existence now that we hold the room lock (it may have been cancelled).\n        cur = db.execute(\n            \"SELECT id FROM bookings WHERE id = %(i)s FOR UPDATE\",\n            {\"i\": booking_id},\n        )\n        if not cur:\n            db.rollback()\n            return False\n\n        upd = db.execute(\n            \"\"\"\n            UPDATE bookings\n               SET starts_at = %(s)s::timestamptz,\n                   ends_at   = %(e)s::timestamptz\n             WHERE id = %(i)s\n               AND NOT EXISTS (\n                   SELECT 1 FROM bookings b\n                   WHERE b.room_id = %(r)s\n                     AND b.id <> %(i)s\n                     AND b.starts_at < %(e)s::timestamptz\n                     AND b.ends_at > %(s)s::timestamptz\n               )\n               AND (\n                   SELECT count(*) FROM bookings b\n                   WHERE b.room_id = %(r)s\n                     AND b.id <> %(i)s\n                     AND (b.starts_at AT TIME ZONE 'UTC')::date\n                         = (%(s)s::timestamptz AT TIME ZONE 'UTC')::date\n               ) < 3\n            RETURNING id\n            \"\"\",\n            {\"i\": booking_id, \"r\": room_id, \"s\": new_starts_at, \"e\": new_ends_at},\n        )\n        ok = bool(upd)\n        db.commit()\n        return ok\n    except BaseException:\n        db.rollback()\n        raise\n\n\ndef cancel(db, booking_id: int) -> bool:\n    rows = db.execute(\"SELECT room_id FROM bookings WHERE id = %(i)s\", {\"i\": booking_id})\n    if not rows:\n        return False\n    room_id = rows[0][0]\n\n    db.begin(\"read committed\")\n    try:\n        _lock_room(db, room_id)\n        deleted = db.execute(\n            \"DELETE FROM bookings WHERE id = %(i)s RETURNING id\",\n            {\"i\": booking_id},\n        )\n        ok = bool(deleted)\n        db.commit()\n        return ok\n    except BaseException:\n        db.rollback()\n        raise\n```",
+  "ttft_ms": 9963,
+  "type": "result",
+  "duration_ms": 17762,
+  "uuid": "b6526ecb-8fb5-4f1e-a748-4557dd4c1599",
+  "ttft_stream_ms": 1359,
+  "time_to_request_ms": 163,
+  "first_content_frame_ms": 1359,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

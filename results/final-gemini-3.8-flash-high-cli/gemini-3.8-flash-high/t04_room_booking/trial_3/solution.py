@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from datetime import datetime
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    try:
+        db.execute(
+            "ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap "
+            "EXCLUDE USING gist (room_id WITH =, (tstzrange(starts_at, ends_at)) WITH &&)"
+        )
+    except (errors.DuplicateTable, errors.DuplicateObject):
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    for _ in range(10):
+        try:
+            db.begin()
+            rows = db.execute(
+                """
+                INSERT INTO bookings (room_id, starts_at, ends_at)
+                SELECT %(room_id)s, %(starts_at)s, %(ends_at)s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM bookings
+                    WHERE room_id = %(room_id)s
+                      AND tstzrange(starts_at, ends_at) && tstzrange(%(starts_at)s, %(ends_at)s)
+                )
+                RETURNING id
+                """,
+                {"room_id": room_id, "starts_at": starts_at, "ends_at": ends_at},
+            )
+            if rows:
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except (errors.DeadlockDetected, errors.SerializationFailure, errors.LockNotAvailable):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+        except errors.ExclusionViolation:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return False
+    return False

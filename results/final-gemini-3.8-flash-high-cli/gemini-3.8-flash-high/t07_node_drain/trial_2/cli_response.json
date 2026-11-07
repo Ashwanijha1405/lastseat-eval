@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "An implementation of `drain_node` and optional `migrate` for PostgreSQL 16:\n\n```python\nfrom __future__ import annotations\n\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_replicas_node_active ON replicas (node_id, active, shard_id)\"\n    )\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_replicas_shard_active ON replicas (shard_id, active)\"\n    )\n\n\ndef drain_node(db, node_id: str) -> bool:\n    for _ in range(5):\n        try:\n            db.begin()\n            # Serialize concurrent drain operations to prevent write skew across shared shards\n            db.execute(\"SELECT pg_advisory_xact_lock(742948291)\")\n\n            # Check if draining this node would leave any shard with zero active replicas\n            bad_shards = db.execute(\n                \"\"\"\n                SELECT 1\n                FROM replicas r1\n                WHERE r1.node_id = %(node_id)s\n                  AND r1.active = true\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM replicas r2\n                      WHERE r2.shard_id = r1.shard_id\n                        AND r2.node_id != %(node_id)s\n                        AND r2.active = true\n                  )\n                LIMIT 1\n                \"\"\",\n                {\"node_id\": node_id},\n            )\n\n            if bad_shards:\n                db.rollback()\n                return False\n\n            # Deactivate active replicas on this node\n            db.execute(\n                \"\"\"\n                UPDATE replicas\n                SET active = false\n                WHERE node_id = %(node_id)s\n                  AND active = true\n                \"\"\",\n                {\"node_id\": node_id},\n            )\n            db.commit()\n            return True\n        except (errors.SerializationFailure, errors.DeadlockDetected, errors.LockNotAvailable):\n            db.rollback()\n            continue\n        except Exception:\n            db.rollback()\n            raise\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 36588,
+    "output_tokens": 51947,
+    "thinking_tokens": 51389,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 2,
+    "tool_calls_ran": []
+  }
+}

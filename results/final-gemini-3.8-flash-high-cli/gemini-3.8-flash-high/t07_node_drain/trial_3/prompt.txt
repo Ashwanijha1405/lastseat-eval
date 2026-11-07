@@ -1,0 +1,90 @@
+# Environment and rules
+
+You are writing one Python function for a backend service backed by **PostgreSQL 16**. Your code is tested automatically against a real PostgreSQL 16 server.
+
+## How your function is called
+
+- Your function receives a `db` object as its first argument. Each call to your function is one incoming request with its **own database connection**.
+- **Several requests call your function at the same time**, each on its own connection, and their statements may be interleaved in any order the database allows. The task's rules must hold however that happens.
+- **Valid requests must succeed even when they arrive at the same moment.** If a set of requests would all succeed when run one after another, they must all succeed when they run concurrently. Raising an exception, or refusing a request only because another request was in progress at the same time, counts as a failure.
+- When the task says to refuse a request, return the value the task specifies. Do not raise.
+
+## The `db` object
+
+```python
+db.begin(isolation: str = "read committed")  # "read committed" | "repeatable read" | "serializable"
+db.execute(sql: str, params: dict | tuple | None = None) -> list[tuple]  # all result rows; [] if none
+db.commit()
+db.rollback()
+```
+
+- Placeholders use psycopg style: `%(name)s` with a dict, or `%s` with a tuple.
+- **One SQL statement per `execute` call.** A string containing several statements separated by `;` is rejected with an error.
+- Outside `db.begin()` … `db.commit()`/`db.rollback()`, each `execute` runs and commits on its own.
+- Database errors are raised as `psycopg.errors.*` exceptions, for example `SerializationFailure` (SQLSTATE 40001), `DeadlockDetected` (40P01), `UniqueViolation`, `ExclusionViolation`, `LockNotAvailable`. You may catch them, roll back, and retry. After an error inside a transaction, call `db.rollback()` before running anything else on that connection.
+- If your function returns while a transaction is still open, the open transaction is rolled back and its changes are lost.
+- Each request may make at most **60** `db` calls (`begin`, `execute`, `commit`, `rollback` each count as one). A request that exceeds this fails. Keep any retry loop bounded.
+- Do not sleep or wait between retries; just retry.
+
+## Optional schema migration
+
+You may also define:
+
+```python
+def migrate(db) -> None: ...
+```
+
+migrate(db), if defined, runs once, alone, on a database that already contains the existing data for the scenario, before any request runs. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
+
+## What you may import
+
+Only: `psycopg.errors` (as `import psycopg`, `import psycopg.errors`, `from psycopg import errors`, or `from psycopg.errors import ...`; only the exception classes are available), `datetime`, `decimal`, `typing`, and `__future__`. Any other import makes the whole solution invalid. Do not open your own database connections, start threads, or use the network or files.
+
+## Answer format
+
+Reply with the complete Python module in a single fenced code block (three backticks followed by `python`). It must define the function named in the task, and optionally `migrate`. Only the last `python` code block in your reply is used.
+
+---
+
+# Task: draining a storage node for maintenance
+
+Our database cluster stores data in shards. Every shard has replicas on several storage nodes, and a replica is either active (serving reads and writes) or inactive. Before maintenance, an operator drains a node: all replicas on that node become inactive. Operators often drain different nodes at about the same moment, and one node holds replicas of many shards.
+
+Write the function the operations console calls:
+
+```python
+def drain_node(db, node_id: str) -> bool: ...
+```
+
+The schema already exists:
+
+```sql
+CREATE TABLE nodes (
+    id       text PRIMARY KEY,
+    hostname text NOT NULL
+);
+
+CREATE TABLE shards (
+    id int PRIMARY KEY
+);
+
+CREATE TABLE replicas (
+    shard_id int NOT NULL REFERENCES shards (id),
+    node_id  text NOT NULL REFERENCES nodes (id),
+    active   boolean NOT NULL,
+    PRIMARY KEY (shard_id, node_id)
+);
+```
+
+Replicas are never added or removed while drains run; only `active` changes.
+
+## Behaviour
+
+- If every shard that has an active replica on this node also has at least one active replica on another node: set `active = false` for all of this node's replicas and return `True`.
+- Otherwise (draining would leave some shard with no active replica): return `False` and change nothing. A drain is all or nothing: never deactivate only some of the node's replicas.
+- The node always exists. Only this node's replicas may change.
+
+## Rules that must always hold, however many drains run at the same time
+
+1. Every shard always has at least one active replica.
+2. Drains that fit must succeed: if a set of drains would all succeed when run one after another, each of them must return `True` when they arrive at the same moment.

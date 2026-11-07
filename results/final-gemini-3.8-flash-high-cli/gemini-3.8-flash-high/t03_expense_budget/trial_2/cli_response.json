@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_expenses_dept_approved \"\n        \"ON expenses (department_id, amount) \"\n        \"WHERE status = 'approved'\"\n    )\n    db.execute(\"ANALYZE expenses\")\n    db.execute(\"ANALYZE departments\")\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    max_retries = 8\n    for attempt in range(max_retries):\n        try:\n            db.begin(isolation=\"read committed\")\n\n            # Exclusively lock the department row to serialize concurrent approvals for this department.\n            lock_rows = db.execute(\n                \"SELECT id, budget FROM departments \"\n                \"WHERE id = (SELECT department_id FROM expenses WHERE id = %s) \"\n                \"FOR UPDATE\",\n                (expense_id,),\n            )\n            if not lock_rows:\n                db.rollback()\n                return False\n\n            dept_id, budget = lock_rows[0]\n\n            # In read committed mode, this query sees all transactions committed prior to statement start.\n            expense_rows = db.execute(\n                \"SELECT e.amount, e.status, \"\n                \"(SELECT COALESCE(SUM(amount), 0) FROM expenses \"\n                \" WHERE department_id = %s AND status = 'approved') \"\n                \"FROM expenses e WHERE e.id = %s\",\n                (dept_id, expense_id),\n            )\n            if not expense_rows:\n                db.rollback()\n                return False\n\n            amount, status, approved_total = expense_rows[0]\n\n            # Check if pending and fits within budget\n            if status != \"pending\" or approved_total + amount > budget:\n                db.rollback()\n                return False\n\n            updated = db.execute(\n                \"UPDATE expenses SET status = 'approved' \"\n                \"WHERE id = %s AND status = 'pending' \"\n                \"RETURNING id\",\n                (expense_id,),\n            )\n            if not updated:\n                db.rollback()\n                return False\n\n            db.commit()\n            return True\n\n        except errors.Error:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            if attempt == max_retries - 1:\n                raise\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 47809,
+    "output_tokens": 43591,
+    "thinking_tokens": 42960,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 2,
+    "tool_calls_ran": []
+  }
+}

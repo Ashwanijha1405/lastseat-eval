@@ -1,0 +1,71 @@
+```python
+from __future__ import annotations
+
+from psycopg import errors
+
+_CATCHABLE = (
+    getattr(errors, "Error", ()),
+    getattr(errors, "TransactionRollbackError", ()),
+    getattr(errors, "SerializationFailure", ()),
+    getattr(errors, "DeadlockDetected", ()),
+    getattr(errors, "OperationalError", ()),
+)
+DB_ERRORS = tuple(
+    e for e in _CATCHABLE if isinstance(e, type) and issubclass(e, BaseException)
+) or (Exception,)
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_doctors_shift_on_call ON doctors (shift_id, on_call)"
+    )
+
+
+def go_off_call(db, doctor_id: int) -> bool:
+    for attempt in range(10):
+        try:
+            db.begin()
+            rows = db.execute(
+                "SELECT shift_id FROM doctors WHERE id = %s",
+                (doctor_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            shift_id = rows[0][0]
+
+            # Exclusively lock the shift row to serialize concurrent requests for this shift
+            db.execute(
+                "SELECT 1 FROM shifts WHERE id = %s FOR UPDATE",
+                (shift_id,),
+            )
+
+            # Atomically update this doctor's on_call flag only if at least one other doctor is on call
+            updated = db.execute(
+                """
+                UPDATE doctors
+                SET on_call = false
+                WHERE id = %(doctor_id)s
+                  AND on_call = true
+                  AND EXISTS (
+                      SELECT 1 FROM doctors
+                      WHERE shift_id = %(shift_id)s
+                        AND on_call = true
+                        AND id != %(doctor_id)s
+                  )
+                RETURNING id
+                """,
+                {"doctor_id": doctor_id, "shift_id": shift_id},
+            )
+            db.commit()
+            return bool(updated)
+        except DB_ERRORS:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt == 9:
+                return False
+
+    return False
+```

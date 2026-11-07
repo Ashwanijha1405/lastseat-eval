@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_replicas_node_active ON replicas (node_id, active, shard_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_replicas_shard_active ON replicas (shard_id, active)"
+    )
+
+
+def drain_node(db, node_id: str) -> bool:
+    for _ in range(5):
+        try:
+            db.begin()
+            # Serialize concurrent drain operations to prevent write skew across shared shards
+            db.execute("SELECT pg_advisory_xact_lock(742948291)")
+
+            # Check if draining this node would leave any shard with zero active replicas
+            bad_shards = db.execute(
+                """
+                SELECT 1
+                FROM replicas r1
+                WHERE r1.node_id = %(node_id)s
+                  AND r1.active = true
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM replicas r2
+                      WHERE r2.shard_id = r1.shard_id
+                        AND r2.node_id != %(node_id)s
+                        AND r2.active = true
+                  )
+                LIMIT 1
+                """,
+                {"node_id": node_id},
+            )
+
+            if bad_shards:
+                db.rollback()
+                return False
+
+            # Deactivate active replicas on this node
+            db.execute(
+                """
+                UPDATE replicas
+                SET active = false
+                WHERE node_id = %(node_id)s
+                  AND active = true
+                """,
+                {"node_id": node_id},
+            )
+            db.commit()
+            return True
+        except (errors.SerializationFailure, errors.DeadlockDetected, errors.LockNotAvailable):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+
+    return False

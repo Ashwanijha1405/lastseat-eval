@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nimport psycopg.errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_expenses_approved \"\n        \"ON expenses (department_id, amount) WHERE status = 'approved'\"\n    )\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    for _ in range(5):\n        try:\n            db.begin()\n\n            # Serialize approval requests per department using a transaction-level advisory lock.\n            # Any concurrent request for the same department will wait until this transaction finishes.\n            lock_rows = db.execute(\n                \"SELECT pg_advisory_xact_lock(department_id::bigint) \"\n                \"FROM expenses WHERE id = %(id)s\",\n                {\"id\": expense_id},\n            )\n            if not lock_rows:\n                db.rollback()\n                return False\n\n            # With the department lock acquired, read committed ensures this statement sees\n            # all previously committed approvals. Fetch current status, amount, department budget,\n            # and current sum of approved expenses.\n            rows = db.execute(\n                \"\"\"\n                SELECT\n                    e.status,\n                    e.amount,\n                    d.budget,\n                    COALESCE((\n                        SELECT SUM(amount)\n                        FROM expenses\n                        WHERE department_id = e.department_id AND status = 'approved'\n                    ), 0) AS total_approved\n                FROM expenses e\n                JOIN departments d ON d.id = e.department_id\n                WHERE e.id = %(id)s\n                \"\"\",\n                {\"id\": expense_id},\n            )\n            if not rows:\n                db.rollback()\n                return False\n\n            status, amount, budget, total_approved = rows[0]\n\n            if status != \"pending\" or total_approved + amount > budget:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE expenses SET status = 'approved' \"\n                \"WHERE id = %(id)s AND status = 'pending'\",\n                {\"id\": expense_id},\n            )\n            db.commit()\n            return True\n\n        except psycopg.errors.Error:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 45347,
+    "output_tokens": 41983,
+    "thinking_tokens": 41422,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

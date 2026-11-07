@@ -1,0 +1,56 @@
+```python
+import psycopg.errors
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    for _ in range(5):
+        try:
+            db.begin("read committed")
+
+            # department_id never changes, so reading it without a lock is safe.
+            rows = db.execute(
+                "SELECT department_id FROM expenses WHERE id = %s",
+                (expense_id,),
+            )
+            if not rows:
+                db.rollback()
+                return False
+            dept_id = rows[0][0]
+
+            # Serialize all approvals for this department. In READ COMMITTED,
+            # each later statement takes a fresh snapshot, so after acquiring
+            # this lock we see every previously committed approval.
+            budget_rows = db.execute(
+                "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+                (dept_id,),
+            )
+            budget = budget_rows[0][0]
+
+            updated = db.execute(
+                """
+                UPDATE expenses
+                   SET status = 'approved'
+                 WHERE id = %(eid)s
+                   AND status = 'pending'
+                   AND amount + (
+                         SELECT COALESCE(SUM(amount), 0)
+                           FROM expenses
+                          WHERE department_id = %(did)s
+                            AND status = 'approved'
+                       ) <= %(budget)s
+                RETURNING id
+                """,
+                {"eid": expense_id, "did": dept_id, "budget": budget},
+            )
+            db.commit()
+            return bool(updated)
+        except (
+            psycopg.errors.DeadlockDetected,
+            psycopg.errors.SerializationFailure,
+        ):
+            db.rollback()
+            continue
+    return False
+```
+
+The function takes a row lock on the department (`SELECT ... FOR UPDATE`), so approvals for the same department run one at a time while different departments run in parallel. Under READ COMMITTED, the check-and-update statement runs after the lock is acquired and sees all previously committed approvals. Rule 1 holds because the budget check and the update happen atomically under the lock. Rule 2 holds because waiting requests are queued rather than rejected, and each is judged against the true committed total, exactly as in a sequential run. The department row is only locked, never modified. The retry loop is bounded and only triggers on deadlock or serialization errors, which shouldn't occur since each transaction holds just one lock.

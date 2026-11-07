@@ -1,0 +1,51 @@
+Lock both rows in ascending `id` order, then check the balance and update.
+
+- **Deadlocks:** A→B and B→A both lock the lower id first, so they queue instead of deadlocking. They do not deadlock.
+- **Overdraft and lost money:** The balance check runs after the sender's row is locked, so it always sees the latest committed balance. Both rows change in one transaction, so the total stays the same and no balance goes below zero.
+- **Unexpected errors:** A bounded retry handles any deadlock or serialization error. Each attempt makes at most 6 `db` calls, so 6 attempts stay under the 60-call limit.
+
+```python
+import psycopg.errors as errors
+
+_RETRYABLE = (
+    errors.DeadlockDetected,
+    errors.SerializationFailure,
+    errors.LockNotAvailable,
+)
+
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    last_exc = None
+    for _ in range(6):
+        db.begin("read committed")
+        try:
+            # Lock both rows in a global order (ascending id) to avoid deadlocks.
+            rows = db.execute(
+                "SELECT id, balance FROM accounts "
+                "WHERE id IN (%(a)s, %(b)s) "
+                "ORDER BY id FOR UPDATE",
+                {"a": from_id, "b": to_id},
+            )
+            balances = {r[0]: r[1] for r in rows}
+            if balances.get(from_id) is None or balances.get(to_id) is None \
+                    or balances[from_id] < amount:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE accounts SET balance = balance + CASE "
+                "WHEN id = %(f)s THEN -%(amt)s ELSE %(amt)s END "
+                "WHERE id IN (%(f)s, %(t)s)",
+                {"f": from_id, "t": to_id, "amt": amount},
+            )
+            db.commit()
+            return True
+        except _RETRYABLE as e:
+            last_exc = e
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    raise last_exc
+```

@@ -1,0 +1,63 @@
+Each booking locks its room's row before checking for overlaps, so bookings for the same room run one at a time. Bookings that fit just wait briefly and then succeed. Bookings for different rooms don't block each other.
+
+```python
+import psycopg.errors as errors
+
+
+def migrate(db) -> None:
+    # Speeds up the overlap check. No exclusion constraint, because the
+    # existing data might not satisfy it and the migration would fail.
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS bookings_room_time_idx "
+        "ON bookings (room_id, starts_at, ends_at)"
+    )
+
+
+def book_room(db, room_id, starts_at, ends_at) -> bool:
+    params = {"room": room_id, "s": starts_at, "e": ends_at}
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            # Lock the room row so requests for the same room run one at a time.
+            db.execute(
+                "SELECT id FROM rooms WHERE id = %(room)s FOR UPDATE",
+                params,
+            )
+            # In READ COMMITTED each statement takes a fresh snapshot, so this
+            # sees every booking committed by whoever held the lock before us.
+            rows = db.execute(
+                "SELECT 1 FROM bookings "
+                "WHERE room_id = %(room)s "
+                "AND starts_at < %(e)s AND ends_at > %(s)s "
+                "LIMIT 1",
+                params,
+            )
+            if rows:
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) "
+                "VALUES (%(room)s, %(s)s, %(e)s)",
+                params,
+            )
+            db.commit()
+            return True
+        except (
+            errors.SerializationFailure,
+            errors.DeadlockDetected,
+            errors.LockNotAvailable,
+        ):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+```
+
+How it works:
+
+- **Rule 1 (no overlaps):** The overlap check and the insert both happen while the room's row is locked. No other request can check or insert a booking for that room until this one commits.
+- **Rule 2 (fitting bookings succeed):** A conflicting request waits for the lock; it isn't refused. When it gets the lock, its check sees all committed bookings for that room. So it returns `False` only for a real overlap.
+- **Touching bookings:** The check `starts_at < new_end AND ends_at > new_start` treats bookings as running up to but not including `ends_at`. So 10:00–11:00 and 11:00–12:00 are allowed together.
+- **Retries:** The retry loop is a safeguard and stays within the 60-call limit. With only one lock per request, deadlocks shouldn't happen.

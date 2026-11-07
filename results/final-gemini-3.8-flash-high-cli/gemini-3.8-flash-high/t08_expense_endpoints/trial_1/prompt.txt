@@ -1,0 +1,102 @@
+# Environment and rules
+
+You are writing one Python function for a backend service backed by **PostgreSQL 16**. Your code is tested automatically against a real PostgreSQL 16 server.
+
+## How your function is called
+
+- Your function receives a `db` object as its first argument. Each call to your function is one incoming request with its **own database connection**.
+- **Several requests call your function at the same time**, each on its own connection, and their statements may be interleaved in any order the database allows. The task's rules must hold however that happens.
+- **Valid requests must succeed even when they arrive at the same moment.** If a set of requests would all succeed when run one after another, they must all succeed when they run concurrently. Raising an exception, or refusing a request only because another request was in progress at the same time, counts as a failure.
+- When the task says to refuse a request, return the value the task specifies. Do not raise.
+
+## The `db` object
+
+```python
+db.begin(isolation: str = "read committed")  # "read committed" | "repeatable read" | "serializable"
+db.execute(sql: str, params: dict | tuple | None = None) -> list[tuple]  # all result rows; [] if none
+db.commit()
+db.rollback()
+```
+
+- Placeholders use psycopg style: `%(name)s` with a dict, or `%s` with a tuple.
+- **One SQL statement per `execute` call.** A string containing several statements separated by `;` is rejected with an error.
+- Outside `db.begin()` … `db.commit()`/`db.rollback()`, each `execute` runs and commits on its own.
+- Database errors are raised as `psycopg.errors.*` exceptions, for example `SerializationFailure` (SQLSTATE 40001), `DeadlockDetected` (40P01), `UniqueViolation`, `ExclusionViolation`, `LockNotAvailable`. You may catch them, roll back, and retry. After an error inside a transaction, call `db.rollback()` before running anything else on that connection.
+- If your function returns while a transaction is still open, the open transaction is rolled back and its changes are lost.
+- Each request may make at most **60** `db` calls (`begin`, `execute`, `commit`, `rollback` each count as one). A request that exceeds this fails. Keep any retry loop bounded.
+- Do not sleep or wait between retries; just retry.
+
+## Optional schema migration
+
+You may also define:
+
+```python
+def migrate(db) -> None: ...
+```
+
+migrate(db), if defined, runs once, alone, on a database that already contains the existing data for the scenario, before any request runs. Use it for indexes, constraints, triggers, functions, or extensions (`btree_gist` is available). The same `db` API and the one-statement-per-call rule apply. Your code runs as a regular database user that owns the database (not a superuser).
+
+## What you may import
+
+Only: `psycopg.errors` (as `import psycopg`, `import psycopg.errors`, `from psycopg import errors`, or `from psycopg.errors import ...`; only the exception classes are available), `datetime`, `decimal`, `typing`, and `__future__`. Any other import makes the whole solution invalid. Do not open your own database connections, start threads, or use the network or files.
+
+## Answer format
+
+Reply with the complete Python module in a single fenced code block (three backticks followed by `python`). It must define the function named in the task, and optionally `migrate`. Only the last `python` code block in your reply is used.
+
+---
+
+# Task: expense app endpoints
+
+Each department has a spending budget. Employees submit expenses, which start as pending. In an internal app, managers approve expenses, employees correct the amount of an expense (also after it was approved), and finance staff adjust department budgets. All of this happens at the same time, all day.
+
+Write the three functions the app calls:
+
+```python
+def approve_expense(db, expense_id: int) -> bool: ...
+def edit_expense(db, expense_id: int, new_amount: int) -> bool: ...
+def change_budget(db, dept_id: int, new_budget: int) -> bool: ...
+```
+
+Your module must define all three. Requests to any of them can arrive at the same moment as requests to the others (or to the same function), each on its own database connection.
+
+The schema already exists:
+
+```sql
+CREATE TABLE departments (
+    id     int PRIMARY KEY,
+    name   text NOT NULL,
+    budget int NOT NULL CHECK (budget >= 0)
+);
+
+CREATE TABLE expenses (
+    id            int PRIMARY KEY,
+    department_id int NOT NULL REFERENCES departments (id),
+    amount        int NOT NULL CHECK (amount > 0),
+    status        text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected'))
+);
+```
+
+Amounts and budgets are whole currency units. A department's *approved total* is the sum of `amount` over its expenses whose `status` is `'approved'`. An expense's `department_id` never changes. The expense or department named in a call always exists, `new_amount` is always greater than 0, and `new_budget` is always at least 0.
+
+## Behaviour
+
+**`approve_expense(db, expense_id)`**
+- If the expense is `pending` and approving it keeps its department's approved total (including this expense) at most the department's `budget`: set its `status` to `'approved'` and return `True`.
+- Otherwise (not pending, or it would exceed the budget): return `False` and change nothing.
+
+**`edit_expense(db, expense_id, new_amount)`**
+- If the expense is `approved`, the change is allowed only if the department's approved total, with this expense at `new_amount`, stays at most the `budget`.
+- If the expense is not approved, the change is always allowed.
+- If allowed: set its `amount` to `new_amount` and return `True`. Otherwise return `False` and change nothing. The status never changes.
+
+**`change_budget(db, dept_id, new_budget)`**
+- If the department's approved total is at most `new_budget`: set its `budget` to `new_budget` and return `True`.
+- Otherwise return `False` and change nothing.
+
+The schema is fixed: schema changes go through a separate review, so this change must ship without one. Do not define migrate(), and do not add tables, columns, triggers or constraints. Within that, use any SQL, locking and isolation level you like.
+
+## Rules that must always hold, however many requests run at the same time
+
+1. For every department, the approved total never exceeds its budget.
+2. Requests that fit must succeed: if a set of requests would all return `True` when run one after another, in any order, each of them must return `True` when they arrive at the same moment.

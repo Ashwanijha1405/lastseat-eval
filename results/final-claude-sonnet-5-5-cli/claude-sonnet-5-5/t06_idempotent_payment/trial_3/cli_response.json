@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 11318,
+  "stop_reason": "end_turn",
+  "session_id": "6ec3f843-0a3f-4dc3-8276-f2823d666b59",
+  "total_cost_usd": 0.0176761,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 361,
+    "cache_read_input_tokens": 4681,
+    "output_tokens": 1576,
+    "output_tokens_details": {
+      "thinking_tokens": 541
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 361,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1576,
+        "cache_read_input_tokens": 4681,
+        "cache_creation_input_tokens": 361,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 361
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1576,
+      "cacheReadInputTokens": 4681,
+      "cacheCreationInputTokens": 361,
+      "webSearchRequests": 0,
+      "costUSD": 0.0176761,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 541,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 361,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nimport psycopg.errors\n\n\ndef migrate(db) -> None:\n    # Backstop: enforce uniqueness at the database level. If pre-existing data\n    # already contains duplicates, the index can't be built; the advisory-lock\n    # logic in create_payment still guarantees no new duplicates.\n    try:\n        db.execute(\n            \"CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uq \"\n            \"ON payments (idempotency_key)\"\n        )\n    except Exception:\n        try:\n            db.rollback()\n        except Exception:\n            pass\n\n\ndef create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:\n    last_err = None\n    for _ in range(10):\n        try:\n            db.begin(\"read committed\")\n            # Serialize all attempts with the same key. The lock is released at\n            # commit/rollback; each later statement takes a fresh snapshot in\n            # READ COMMITTED, so it sees the winner's committed row.\n            db.execute(\n                \"SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))\",\n                (idempotency_key,),\n            )\n            rows = db.execute(\n                \"SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1\",\n                (idempotency_key,),\n            )\n            if rows:\n                pid = rows[0][0]\n            else:\n                rows = db.execute(\n                    \"INSERT INTO payments (idempotency_key, customer_id, amount) \"\n                    \"VALUES (%s, %s, %s) RETURNING id\",\n                    (idempotency_key, customer_id, amount),\n                )\n                pid = rows[0][0]\n            db.commit()\n            return int(pid)\n        except (\n            psycopg.errors.UniqueViolation,\n            psycopg.errors.SerializationFailure,\n            psycopg.errors.DeadlockDetected,\n        ) as e:\n            last_err = e\n            try:\n                db.rollback()\n            except Exception:\n                pass\n    # Final fallback: the row must exist by now if a unique violation occurred.\n    rows = db.execute(\n        \"SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1\",\n        (idempotency_key,),\n    )\n    return int(rows[0][0])\n```\n\nHow it works:\n- A transaction-level advisory lock keyed on the idempotency key serializes concurrent attempts with the same key. Different keys don't block each other, apart from rare hash collisions that only cause brief waiting.\n- Under READ COMMITTED, the `SELECT` after the lock sees the previous holder's committed row, so a waiting attempt returns the existing `id` instead of inserting.\n- `migrate` adds a unique index as a database-level backstop. If existing data already has duplicate keys, the index build fails and is skipped, and the lock still prevents new duplicates.\n- The retry loop is bounded to 10 iterations, well under the 60-call limit, and handles unique-violation, serialization and deadlock errors.",
+  "ttft_ms": 6019,
+  "type": "result",
+  "duration_ms": 11666,
+  "uuid": "0e7549ed-3291-43c8-99b6-86e32888ebea",
+  "ttft_stream_ms": 1454,
+  "time_to_request_ms": 342,
+  "first_content_frame_ms": 1454,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom psycopg import errors\n\n_CATCHABLE = (\n    getattr(errors, \"Error\", ()),\n    getattr(errors, \"TransactionRollbackError\", ()),\n    getattr(errors, \"SerializationFailure\", ()),\n    getattr(errors, \"DeadlockDetected\", ()),\n    getattr(errors, \"OperationalError\", ()),\n)\nDB_ERRORS = tuple(\n    e for e in _CATCHABLE if isinstance(e, type) and issubclass(e, BaseException)\n) or (Exception,)\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_doctors_shift_on_call ON doctors (shift_id, on_call)\"\n    )\n\n\ndef go_off_call(db, doctor_id: int) -> bool:\n    for attempt in range(10):\n        try:\n            db.begin()\n            rows = db.execute(\n                \"SELECT shift_id FROM doctors WHERE id = %s\",\n                (doctor_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            shift_id = rows[0][0]\n\n            # Exclusively lock the shift row to serialize concurrent requests for this shift\n            db.execute(\n                \"SELECT 1 FROM shifts WHERE id = %s FOR UPDATE\",\n                (shift_id,),\n            )\n\n            # Atomically update this doctor's on_call flag only if at least one other doctor is on call\n            updated = db.execute(\n                \"\"\"\n                UPDATE doctors\n                SET on_call = false\n                WHERE id = %(doctor_id)s\n                  AND on_call = true\n                  AND EXISTS (\n                      SELECT 1 FROM doctors\n                      WHERE shift_id = %(shift_id)s\n                        AND on_call = true\n                        AND id != %(doctor_id)s\n                  )\n                RETURNING id\n                \"\"\",\n                {\"doctor_id\": doctor_id, \"shift_id\": shift_id},\n            )\n            db.commit()\n            return bool(updated)\n        except DB_ERRORS:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            if attempt == 9:\n                return False\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 21453,
+    "output_tokens": 39101,
+    "thinking_tokens": 38538,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

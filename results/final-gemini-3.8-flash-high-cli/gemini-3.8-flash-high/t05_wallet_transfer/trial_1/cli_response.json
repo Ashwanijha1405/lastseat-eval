@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom psycopg.errors import DeadlockDetected, SerializationFailure\n\n\ndef transfer(db, from_id: int, to_id: int, amount: int) -> bool:\n    first_id = min(from_id, to_id)\n    second_id = max(from_id, to_id)\n\n    for _ in range(10):\n        try:\n            db.begin()\n\n            # Lock the lower account ID first to prevent deadlocks across concurrent transfers\n            r1 = db.execute(\n                \"SELECT balance FROM accounts WHERE id = %s FOR UPDATE\",\n                (first_id,),\n            )\n            if first_id == from_id and r1[0][0] < amount:\n                db.rollback()\n                return False\n\n            # Lock the higher account ID\n            r2 = db.execute(\n                \"SELECT balance FROM accounts WHERE id = %s FOR UPDATE\",\n                (second_id,),\n            )\n\n            from_balance = r1[0][0] if from_id == first_id else r2[0][0]\n            if from_balance < amount:\n                db.rollback()\n                return False\n\n            # Apply the balance adjustments atomically\n            db.execute(\n                \"UPDATE accounts \"\n                \"SET balance = balance + CASE WHEN id = %s THEN %s ELSE %s END \"\n                \"WHERE id IN (%s, %s)\",\n                (to_id, amount, -amount, from_id, to_id),\n            )\n            db.commit()\n            return True\n\n        except (DeadlockDetected, SerializationFailure):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 34922,
+    "output_tokens": 46686,
+    "thinking_tokens": 46243,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

@@ -1,0 +1,58 @@
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_doctors_shift_on_call ON doctors (shift_id, on_call)"
+    )
+
+
+def go_off_call(db, doctor_id: int) -> bool:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+
+            doctor_rows = db.execute(
+                "SELECT shift_id FROM doctors WHERE id = %s",
+                (doctor_id,),
+            )
+            if not doctor_rows:
+                db.rollback()
+                return False
+
+            shift_id = doctor_rows[0][0]
+
+            # Lock the shift row to serialize concurrent rota changes within the same shift.
+            db.execute(
+                "SELECT id FROM shifts WHERE id = %s FOR UPDATE",
+                (shift_id,),
+            )
+
+            # Atomically verify another doctor is on call before setting this doctor off call.
+            updated = db.execute(
+                """
+                UPDATE doctors
+                SET on_call = false
+                WHERE id = %(doctor_id)s
+                  AND on_call = true
+                  AND EXISTS (
+                      SELECT 1
+                      FROM doctors
+                      WHERE shift_id = %(shift_id)s
+                        AND id <> %(doctor_id)s
+                        AND on_call = true
+                  )
+                RETURNING 1
+                """,
+                {"doctor_id": doctor_id, "shift_id": shift_id},
+            )
+
+            db.commit()
+            return len(updated) > 0
+        except errors.Error:
+            try:
+                db.rollback()
+            except errors.Error:
+                pass
+
+    return False

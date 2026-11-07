@@ -1,0 +1,40 @@
+```python
+import psycopg.errors
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    # The conditional UPDATE takes the row lock and, under READ COMMITTED,
+    # re-checks `stock >= qty` against the latest committed row version after
+    # waiting. Concurrent buyers are therefore serialized per product, and
+    # stock can't go negative. The order insert runs in the same statement
+    # and transaction, so the stock decrement and the order row commit or
+    # roll back together.
+    for _ in range(10):
+        db.begin("read committed")
+        try:
+            rows = db.execute(
+                """
+                WITH upd AS (
+                    UPDATE products
+                       SET stock = stock - %(qty)s
+                     WHERE id = %(pid)s
+                       AND stock >= %(qty)s
+                 RETURNING id
+                )
+                INSERT INTO orders (product_id, qty)
+                SELECT id, %(qty)s FROM upd
+                RETURNING id
+                """,
+                {"pid": product_id, "qty": qty},
+            )
+            db.commit()
+            return bool(rows)
+        except (psycopg.errors.SerializationFailure,
+                psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+```

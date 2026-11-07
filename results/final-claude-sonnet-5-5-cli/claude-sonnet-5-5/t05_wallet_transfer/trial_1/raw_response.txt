@@ -1,0 +1,43 @@
+```python
+import psycopg.errors
+
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    for _ in range(8):
+        try:
+            db.begin("read committed")
+            # Lock both rows in a fixed (id) order so opposite-direction
+            # transfers can never deadlock, and so the balance we read
+            # is the latest committed one once the lock is held.
+            rows = db.execute(
+                "SELECT id, balance FROM accounts "
+                "WHERE id IN (%s, %s) ORDER BY id FOR UPDATE",
+                (from_id, to_id),
+            )
+            balances = {r[0]: r[1] for r in rows}
+            if from_id not in balances or to_id not in balances:
+                db.rollback()
+                return False
+            if balances[from_id] < amount:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                (amount, from_id),
+            )
+            db.execute(
+                "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                (amount, to_id),
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.DeadlockDetected,
+                psycopg.errors.SerializationFailure):
+            db.rollback()
+            continue
+    return False
+```
+
+The function locks both rows with `SELECT ... FOR UPDATE ORDER BY id`, always in ascending id order, so opposite-direction transfers (Alice→Bob and Bob→Alice) queue up instead of deadlocking. Under read committed, the balance read after the lock is the latest committed value, so the check is accurate and balances can't go negative. Both updates run in one transaction, so the total never changes. The retry loop for deadlock or serialization errors is bounded and shouldn't trigger in practice.
+
+One limit: if the sender can't cover a transfer at the moment its turn comes, it returns `False`, even if a concurrent incoming transfer would have funded it had it run first. The database's lock order decides which runs first, and nothing here can reorder them.

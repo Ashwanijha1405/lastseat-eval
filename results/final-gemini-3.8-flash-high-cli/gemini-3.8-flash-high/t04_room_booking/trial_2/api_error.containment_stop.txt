@@ -1,0 +1,1 @@
+tool_ran: the CLI ran ['search_web', 'search_web', 'search_web', 'search_web', 'search_web', 'search_web', 'search_web', 'search_web', 'search_web'] although every tool action is denied

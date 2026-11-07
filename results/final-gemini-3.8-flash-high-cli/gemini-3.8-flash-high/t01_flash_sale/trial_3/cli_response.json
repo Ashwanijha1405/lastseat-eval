@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "An atomic checkout function for PostgreSQL 16 backed by a single CTE query:\n\n```python\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    pass\n\n\ndef purchase(db, product_id: int, qty: int) -> bool:\n    for _ in range(15):\n        try:\n            db.begin(isolation=\"read committed\")\n            rows = db.execute(\n                \"\"\"\n                WITH updated AS (\n                    UPDATE products\n                    SET stock = stock - %(qty)s\n                    WHERE id = %(product_id)s AND stock >= %(qty)s\n                    RETURNING id\n                )\n                INSERT INTO orders (product_id, qty)\n                SELECT updated.id, %(qty)s\n                FROM updated\n                RETURNING orders.id\n                \"\"\",\n                {\"product_id\": product_id, \"qty\": qty},\n            )\n            if rows:\n                db.commit()\n                return True\n            else:\n                db.rollback()\n                return False\n        except (errors.TransactionRollbackError, errors.OperationalError):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n    return False\n```\n\n### Concurrency Mechanics\n\n1. **Row-level Serialization**: In PostgreSQL's `read committed` isolation level, the `UPDATE` statement acquires a row exclusive lock on the `products` row for `product_id`. Concurrent requests attempting to purchase the same product wait on this row lock.\n2. **EvalPlanQual (EPQ) Re-evaluation**: When a prior purchase commits and releases the lock, waiting transactions re-evaluate the `WHERE id = %(product_id)s AND stock >= %(qty)s` clause against the newly committed row state. If sufficient stock remains, the update succeeds and proceeds to insert the order row; if not, zero rows are updated.\n3. **Atomic Decrement and Order Record**: The Common Table Expression (`WITH updated AS ... INSERT INTO orders ...`) binds the stock deduction and order insertion into a single atomic statement inside the transaction, guaranteeing that stock is only reduced when an order is created.\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 23448,
+    "output_tokens": 55344,
+    "thinking_tokens": 54846,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

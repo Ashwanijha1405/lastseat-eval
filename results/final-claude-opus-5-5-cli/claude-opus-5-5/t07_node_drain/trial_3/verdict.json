@@ -1,0 +1,119 @@
+{
+  "task_id": "t07_node_drain",
+  "solution": "results/final-claude-opus-5-5-cli/claude-opus-5-5/t07_node_drain/trial_3/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "drain succeeds when every shard keeps a replica",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: drain succeeds when every shard keeps a replica\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT s.id FROM shards s WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = 'A') ORDER BY s.id FOR UPDATE OF s -> [(1,), (2,)]\nstep 3   R1  SELECT 1 FROM replicas r WHERE r.node_id = 'A' AND r.active AND NOT EXISTS ( SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'A' AND o.active ) LIMIT 1 -> []\nstep 4   R1  UPDATE replicas SET active = false WHERE node_id = 'A' AND active -> UPDATE 2\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: every shard has at least one active replica\ninvariant ok: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n\n"
+    },
+    {
+      "name": "drain is refused if any shard would lose its last replica, and nothing changes",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: drain is refused if any shard would lose its last replica, and nothing changes\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT s.id FROM shards s WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = 'A') ORDER BY s.id FOR UPDATE OF s -> [(1,), (2,)]\nstep 3   R1  SELECT 1 FROM replicas r WHERE r.node_id = 'A' AND r.active AND NOT EXISTS ( SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'A' AND o.active ) LIMIT 1 -> [(1,)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: every shard has at least one active replica\ninvariant ok: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{t,t,t,f}' FROM replicas\n\n"
+    },
+    {
+      "name": "shards without an active replica on the node do not block it",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: shards without an active replica on the node do not block it\ncall: drain_node(db, node_id='A')\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT s.id FROM shards s WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = 'A') ORDER BY s.id FOR UPDATE OF s -> [(1,), (2,)]\nstep 3   R1  SELECT 1 FROM replicas r WHERE r.node_id = 'A' AND r.active AND NOT EXISTS ( SELECT 1 FROM replicas o WHERE o.shard_id = r.shard_id AND o.node_id <> 'A' AND o.active ) LIMIT 1 -> []\nstep 4   R1  UPDATE replicas SET active = false WHERE node_id = 'A' AND active -> UPDATE 1\nstep 5   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: every shard has at least one active replica\ninvariant ok: expected state: SELECT array_agg(active ORDER BY shard_id, node_id) = '{f,t,f,t}' FROM replicas\n\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two drains that would together orphan a shard",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.08,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two drains of nodes sharing several shards, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 36,
+      "dfs_schedules": 36,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.1,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two drains of nodes with no shared shard",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 252,
+      "dfs_schedules": 252,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 7.8,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 10.19,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "source": "official-cli",
+    "cli": "claude",
+    "model_id": "claude-opus-5-5",
+    "models_shown": [
+      "claude-opus-5-5"
+    ],
+    "cli_version": "2.1.319 (Claude Code)",
+    "date_utc": "2026-11-07T11:26:23+00:00",
+    "finish_reason": "end_turn",
+    "completion_tokens": 2379,
+    "prompt_tokens": 2,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": 0.051396,
+    "seconds": 24.43,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "claude.ai (claude -p)"
+  }
+}

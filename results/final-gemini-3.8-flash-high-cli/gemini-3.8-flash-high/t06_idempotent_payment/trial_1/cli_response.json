@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_idx ON payments (idempotency_key)\"\n    )\n\n\ndef create_payment(\n    db, idempotency_key: str, customer_id: int, amount: int\n) -> int:\n    for _ in range(25):\n        try:\n            rows = db.execute(\n                \"INSERT INTO payments (idempotency_key, customer_id, amount) \"\n                \"VALUES (%s, %s, %s) \"\n                \"ON CONFLICT (idempotency_key) DO NOTHING \"\n                \"RETURNING id\",\n                (idempotency_key, customer_id, amount),\n            )\n            if rows:\n                return rows[0][0]\n\n            rows = db.execute(\n                \"SELECT id FROM payments WHERE idempotency_key = %s\",\n                (idempotency_key,),\n            )\n            if rows:\n                return rows[0][0]\n        except errors.Error:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n\n    rows = db.execute(\n        \"SELECT id FROM payments WHERE idempotency_key = %s\",\n        (idempotency_key,),\n    )\n    return rows[0][0]\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 44034,
+    "output_tokens": 31298,
+    "thinking_tokens": 30889,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

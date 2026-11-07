@@ -1,0 +1,40 @@
+```python
+from datetime import datetime
+
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    db.begin("read committed")
+    try:
+        # Serialize all bookings for this room by locking its row. Once the lock
+        # is acquired, the next statement takes a fresh snapshot (read committed),
+        # so it sees every booking committed by earlier lock holders.
+        db.execute(
+            "SELECT id FROM rooms WHERE id = %(room)s FOR NO KEY UPDATE",
+            {"room": room_id},
+        )
+        rows = db.execute(
+            "SELECT 1 FROM bookings "
+            "WHERE room_id = %(room)s "
+            "AND starts_at < %(ends)s AND ends_at > %(starts)s "
+            "LIMIT 1",
+            {"room": room_id, "starts": starts_at, "ends": ends_at},
+        )
+        if rows:
+            db.rollback()
+            return False
+        db.execute(
+            "INSERT INTO bookings (room_id, starts_at, ends_at) "
+            "VALUES (%(room)s, %(starts)s, %(ends)s)",
+            {"room": room_id, "starts": starts_at, "ends": ends_at},
+        )
+        db.commit()
+        return True
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
+```
+
+Each request locks the room's row with `FOR NO KEY UPDATE`, so bookings for the same room run one at a time and bookings for different rooms don't block each other. After the lock is granted, the overlap check sees all earlier committed bookings, so no overlaps can slip in. Requests that would succeed in sequence also succeed concurrently, since they only wait and never fail or retry. Back-to-back bookings (11:00 end, 11:00 start) don't count as overlapping because the check uses strict `<` and `>`. I didn't add an exclusion constraint in `migrate`, because it would fail if the existing data already contains overlapping bookings. I haven't run this against a PostgreSQL server.

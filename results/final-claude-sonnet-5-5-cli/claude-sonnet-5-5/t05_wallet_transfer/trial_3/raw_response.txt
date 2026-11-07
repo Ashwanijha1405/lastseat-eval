@@ -1,0 +1,50 @@
+```python
+import psycopg.errors
+
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    for _ in range(5):
+        try:
+            db.begin("read committed")
+            # Lock both rows in a fixed (id) order so opposite-direction
+            # transfers cannot deadlock; the sort happens before row locking.
+            rows = db.execute(
+                "SELECT id, balance FROM accounts "
+                "WHERE id IN (%s, %s) ORDER BY id FOR UPDATE",
+                (from_id, to_id),
+            )
+            balances = {r[0]: r[1] for r in rows}
+            if from_id not in balances or to_id not in balances:
+                db.rollback()
+                return False
+            if balances[from_id] < amount:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                (amount, from_id),
+            )
+            db.execute(
+                "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                (amount, to_id),
+            )
+            db.commit()
+            return True
+        except (
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ):
+            db.rollback()
+            continue
+    return False
+```
+
+How it works:
+- Both rows are locked with `SELECT ... ORDER BY id FOR UPDATE` in one statement, so every transfer takes locks in the same order. This prevents deadlocks between Alice→Bob and Bob→Alice.
+- In read committed mode, the locked rows return the latest committed balances. The balance check and the two updates therefore run against current values, so no balance goes negative and no update is lost.
+- Money moves only inside one transaction, so the total never changes. A refused transfer rolls back and changes nothing.
+- The retry loop is a safety net for deadlock or serialization errors. It makes at most 5 attempts of 5 `db` calls each, which stays within the 60-call limit.
+
+I haven't run this against a PostgreSQL server.
+
+One limit: if a transfer that depends on an earlier incoming transfer (for example Bob→Alice when Bob starts at 0) runs before it, it correctly returns `False`, because the sequential order that makes it succeed was not the order of execution.

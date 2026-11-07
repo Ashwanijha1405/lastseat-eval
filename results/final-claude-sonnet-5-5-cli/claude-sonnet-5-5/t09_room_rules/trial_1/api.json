@@ -1,0 +1,19 @@
+{
+  "source": "official-cli",
+  "cli": "claude",
+  "model_id": "claude-sonnet-5-5",
+  "models_shown": [
+    "claude-sonnet-5-5"
+  ],
+  "cli_version": "2.1.319 (Claude Code)",
+  "date_utc": "2026-11-07T11:53:20+00:00",
+  "finish_reason": "end_turn",
+  "completion_tokens": 3042,
+  "prompt_tokens": 2,
+  "cost_usd": 0.0,
+  "cli_reported_cost_usd": 0.046667600000000004,
+  "seconds": 22.1,
+  "num_turns": 1,
+  "attempts": 1,
+  "provider": "claude.ai (claude -p)"
+}

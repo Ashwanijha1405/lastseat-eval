@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    pass\n\n\ndef purchase(db, product_id: int, qty: int) -> bool:\n    for _ in range(12):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"UPDATE products SET stock = stock - %(qty)s WHERE id = %(id)s AND stock >= %(qty)s RETURNING id\",\n                {\"id\": product_id, \"qty\": qty},\n            )\n            if rows:\n                db.execute(\n                    \"INSERT INTO orders (product_id, qty) VALUES (%(id)s, %(qty)s)\",\n                    {\"id\": product_id, \"qty\": qty},\n                )\n                db.commit()\n                return True\n            else:\n                db.rollback()\n                return False\n        except (\n            errors.TransactionRollbackError,\n            errors.OperationalError,\n            errors.SerializationFailure,\n            errors.DeadlockDetected,\n        ):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 21982,
+    "output_tokens": 35454,
+    "thinking_tokens": 35160,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

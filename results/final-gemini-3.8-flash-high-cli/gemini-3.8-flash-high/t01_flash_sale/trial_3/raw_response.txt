@@ -1,0 +1,49 @@
+An atomic checkout function for PostgreSQL 16 backed by a single CTE query:
+
+```python
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    pass
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    for _ in range(15):
+        try:
+            db.begin(isolation="read committed")
+            rows = db.execute(
+                """
+                WITH updated AS (
+                    UPDATE products
+                    SET stock = stock - %(qty)s
+                    WHERE id = %(product_id)s AND stock >= %(qty)s
+                    RETURNING id
+                )
+                INSERT INTO orders (product_id, qty)
+                SELECT updated.id, %(qty)s
+                FROM updated
+                RETURNING orders.id
+                """,
+                {"product_id": product_id, "qty": qty},
+            )
+            if rows:
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except (errors.TransactionRollbackError, errors.OperationalError):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+```
+
+### Concurrency Mechanics
+
+1. **Row-level Serialization**: In PostgreSQL's `read committed` isolation level, the `UPDATE` statement acquires a row exclusive lock on the `products` row for `product_id`. Concurrent requests attempting to purchase the same product wait on this row lock.
+2. **EvalPlanQual (EPQ) Re-evaluation**: When a prior purchase commits and releases the lock, waiting transactions re-evaluate the `WHERE id = %(product_id)s AND stock >= %(qty)s` clause against the newly committed row state. If sufficient stock remains, the update succeeds and proceeds to insert the order row; if not, zero rows are updated.
+3. **Atomic Decrement and Order Record**: The Common Table Expression (`WITH updated AS ... INSERT INTO orders ...`) binds the stock deduction and order insertion into a single atomic statement inside the transaction, guaranteeing that stock is only reduced when an order is created.

@@ -1,0 +1,22 @@
+{
+  "source": "official-cli",
+  "cli": "antigravity",
+  "model_id": "gemini-3.8-flash-high",
+  "models_shown": [
+    "gemini-3.8-flash-high"
+  ],
+  "cli_version": "1.5.3",
+  "date_utc": "2026-11-07T12:21:40+00:00",
+  "finish_reason": "SUCCESS",
+  "completion_tokens": 44564,
+  "prompt_tokens": 23022,
+  "cost_usd": 0.0,
+  "cli_reported_cost_usd": null,
+  "seconds": 334.65,
+  "num_turns": 1,
+  "attempts": 1,
+  "provider": "Google sign-in (agy --print)",
+  "thinking_tokens": 44334,
+  "tool_calls_denied": 1,
+  "tool_calls_ran": []
+}

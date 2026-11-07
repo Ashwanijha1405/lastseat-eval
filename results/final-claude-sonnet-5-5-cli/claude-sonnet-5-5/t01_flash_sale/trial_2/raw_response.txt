@@ -1,0 +1,28 @@
+```python
+import psycopg.errors
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "UPDATE products SET stock = stock - %(q)s "
+                "WHERE id = %(p)s AND stock >= %(q)s RETURNING id",
+                {"p": product_id, "q": qty},
+            )
+            if not rows:
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO orders (product_id, qty) VALUES (%(p)s, %(q)s)",
+                {"p": product_id, "q": qty},
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+    return False
+```
+
+The conditional `UPDATE ... WHERE stock >= qty` is atomic. Under read committed, concurrent purchases of the same product queue on the row lock. Each one then re-checks the condition against the latest committed stock, so stock can't go negative and every purchase that fits succeeds. The order insert is in the same transaction as the stock decrement, so stock and orders can't drift apart. The retry loop is bounded and only triggers on serialization or deadlock errors, which shouldn't normally occur here.

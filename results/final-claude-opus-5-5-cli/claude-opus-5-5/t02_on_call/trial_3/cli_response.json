@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 13455,
+  "stop_reason": "end_turn",
+  "session_id": "f018eb1d-34cf-4527-bd7a-937ca544650d",
+  "total_cost_usd": 0.0336424,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 358,
+    "cache_read_input_tokens": 4652,
+    "output_tokens": 1492,
+    "output_tokens_details": {
+      "thinking_tokens": 506
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 358,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1492,
+        "cache_read_input_tokens": 4652,
+        "cache_creation_input_tokens": 358,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 358
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1492,
+      "cacheReadInputTokens": 4652,
+      "cacheCreationInputTokens": 358,
+      "webSearchRequests": 0,
+      "costUSD": 0.0336424,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 506,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 358,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The problem here is a write skew. If each request checks \"is someone else on call?\" and then goes off call, two doctors can both see the other as on call and both leave, so the shift ends up with nobody. The fix is to lock the shift's row first. That makes all requests for the same shift run one at a time, in a queue. Each one checks and updates only after the previous request has committed.\n\n- **Rule 1 (at least one doctor on call):** in read committed, every statement takes a fresh snapshot. So once a request holds the shift lock, its count includes all earlier requests that already went off call. Two requests can never both act on stale data.\n- **Rule 2 (valid requests succeed):** a competing request waits for the lock instead of failing. When it gets the lock it sees the true current state. A request that would succeed if run alone therefore still succeeds.\n- **Deadlocks:** each transaction takes only one lock, so they can't occur. A small, bounded retry loop still covers any unexpected transient error.\n- **Lock type:** `FOR NO KEY UPDATE` is enough to make same-shift requests queue. It is lighter than `FOR UPDATE` and does not block foreign-key checks.\n\n```python\nimport psycopg.errors as errors\n\n_RETRYABLE = (\n    errors.SerializationFailure,\n    errors.DeadlockDetected,\n    errors.LockNotAvailable,\n)\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS doctors_shift_on_call_idx \"\n        \"ON doctors (shift_id) WHERE on_call\"\n    )\n\n\ndef go_off_call(db, doctor_id: int) -> bool:\n    last_exc = None\n    for _ in range(8):\n        try:\n            db.begin(\"read committed\")\n            # Serialize all requests for the same shift by locking the shift row.\n            rows = db.execute(\n                \"SELECT s.id FROM shifts s \"\n                \"JOIN doctors d ON d.shift_id = s.id \"\n                \"WHERE d.id = %s \"\n                \"FOR NO KEY UPDATE OF s\",\n                (doctor_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            shift_id = rows[0][0]\n\n            # Fresh snapshot (read committed): sees all previously committed changes.\n            others = db.execute(\n                \"SELECT 1 FROM doctors \"\n                \"WHERE shift_id = %s AND on_call AND id <> %s \"\n                \"LIMIT 1\",\n                (shift_id, doctor_id),\n            )\n            if not others:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE doctors SET on_call = false WHERE id = %s\",\n                (doctor_id,),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE as exc:\n            last_exc = exc\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n    raise last_exc\n```",
+  "ttft_ms": 5715,
+  "type": "result",
+  "duration_ms": 13619,
+  "uuid": "206633b6-0122-45fc-b163-70dc38532639",
+  "ttft_stream_ms": 923,
+  "time_to_request_ms": 161,
+  "first_content_frame_ms": 924,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

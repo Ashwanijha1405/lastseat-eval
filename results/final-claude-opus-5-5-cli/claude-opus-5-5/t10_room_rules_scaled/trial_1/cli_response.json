@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 38956,
+  "stop_reason": "end_turn",
+  "session_id": "85e7331d-0c50-47ac-85ef-cb936227b574",
+  "total_cost_usd": 0.11714639999999998,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4070,
+    "cache_read_input_tokens": 1592,
+    "output_tokens": 4213,
+    "output_tokens_details": {
+      "thinking_tokens": 2282
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 4070,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 4213,
+        "cache_read_input_tokens": 1592,
+        "cache_creation_input_tokens": 4070,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4070
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 4213,
+      "cacheReadInputTokens": 1592,
+      "cacheCreationInputTokens": 4070,
+      "webSearchRequests": 0,
+      "costUSD": 0.11714639999999998,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 2282,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 4070,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Each (room, UTC day) pair gets its own transaction-scoped advisory lock, so requests for different rooms or different days never wait for each other.\n\n- **`book`** takes the lock for its room and day. It then checks for overlaps and the 3-per-day limit, and inserts the booking.\n- **`reschedule`** first locks the booking's row (`SELECT \u2026 FOR UPDATE`) to read its current room and day. It then takes the old-day and new-day locks in ascending order and checks the rules without counting the booking itself.\n- **`cancel`** is a single `DELETE \u2026 RETURNING` statement. Removing a booking can never break a rule, so it needs no day lock.\n- **No deadlocks:** row locks are always taken before day locks, and day locks are always taken in sorted order. `book` takes no row locks, and `cancel` takes only its own row lock.\n- **Read committed is enough:** each statement after a lock is granted sees everything committed by the previous lock holder.\n- **Overlap checks stay inside the lock:** every booking lies within one UTC day, so all bookings that could overlap belong to the locked day.\n- **Retries:** a short, bounded retry loop handles unexpected deadlock or serialization errors.\n\n```python\nimport datetime as _dt\nfrom psycopg import errors\n\n_UTC = _dt.timezone.utc\n_MAX_ATTEMPTS = 5\n_RETRYABLE = (errors.SerializationFailure, errors.DeadlockDetected, errors.LockNotAvailable)\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS bookings_room_starts_idx \"\n        \"ON bookings (room_id, starts_at)\"\n    )\n\n\ndef _day_key(ts: _dt.datetime) -> int:\n    return ts.astimezone(_UTC).date().toordinal()\n\n\ndef _day_bounds(key: int):\n    d = _dt.date.fromordinal(key)\n    start = _dt.datetime(d.year, d.month, d.day, tzinfo=_UTC)\n    return start, start + _dt.timedelta(days=1)\n\n\ndef _lock_day(db, room_id: int, key: int) -> None:\n    db.execute(\"SELECT pg_advisory_xact_lock(%s::int, %s::int)\", (room_id, key))\n\n\ndef _fits(db, room_id: int, exclude_id, starts_at, ends_at, key: int) -> bool:\n    ex = -1 if exclude_id is None else exclude_id\n    rows = db.execute(\n        \"SELECT 1 FROM bookings WHERE room_id = %s AND id <> %s \"\n        \"AND starts_at < %s AND ends_at > %s LIMIT 1\",\n        (room_id, ex, ends_at, starts_at),\n    )\n    if rows:\n        return False\n    day_start, day_end = _day_bounds(key)\n    rows = db.execute(\n        \"SELECT count(*) FROM bookings WHERE room_id = %s AND id <> %s \"\n        \"AND starts_at >= %s AND starts_at < %s\",\n        (room_id, ex, day_start, day_end),\n    )\n    return rows[0][0] < 3\n\n\ndef book(db, room_id: int, starts_at: _dt.datetime, ends_at: _dt.datetime) -> bool:\n    key = _day_key(starts_at)\n    for attempt in range(_MAX_ATTEMPTS):\n        try:\n            db.begin(\"read committed\")\n            _lock_day(db, room_id, key)\n            if not _fits(db, room_id, None, starts_at, ends_at, key):\n                db.rollback()\n                return False\n            db.execute(\n                \"INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)\",\n                (room_id, starts_at, ends_at),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE:\n            db.rollback()\n            if attempt == _MAX_ATTEMPTS - 1:\n                raise\n    return False\n\n\ndef reschedule(db, booking_id: int, new_starts_at: _dt.datetime,\n               new_ends_at: _dt.datetime) -> bool:\n    new_key = _day_key(new_starts_at)\n    for attempt in range(_MAX_ATTEMPTS):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"SELECT room_id, starts_at FROM bookings WHERE id = %s FOR UPDATE\",\n                (booking_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            room_id, old_starts = rows[0]\n            old_key = _day_key(old_starts)\n            for k in sorted({old_key, new_key}):\n                _lock_day(db, room_id, k)\n            if not _fits(db, room_id, booking_id, new_starts_at, new_ends_at, new_key):\n                db.rollback()\n                return False\n            db.execute(\n                \"UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s\",\n                (new_starts_at, new_ends_at, booking_id),\n            )\n            db.commit()\n            return True\n        except _RETRYABLE:\n            db.rollback()\n            if attempt == _MAX_ATTEMPTS - 1:\n                raise\n    return False\n\n\ndef cancel(db, booking_id: int) -> bool:\n    for attempt in range(_MAX_ATTEMPTS):\n        try:\n            rows = db.execute(\n                \"DELETE FROM bookings WHERE id = %s RETURNING id\", (booking_id,)\n            )\n            return bool(rows)\n        except _RETRYABLE:\n            if attempt == _MAX_ATTEMPTS - 1:\n                raise\n    return False\n```",
+  "ttft_ms": 25477,
+  "type": "result",
+  "duration_ms": 39444,
+  "uuid": "0f57229a-f6fb-42d7-89d1-cabb6df41835",
+  "ttft_stream_ms": 1422,
+  "time_to_request_ms": 488,
+  "first_content_frame_ms": 1423,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 14665,
+  "stop_reason": "end_turn",
+  "session_id": "65060921-b27c-46da-878c-a6f02e9f7be7",
+  "total_cost_usd": 0.035077399999999995,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 360,
+    "cache_read_input_tokens": 4647,
+    "output_tokens": 1563,
+    "output_tokens_details": {
+      "thinking_tokens": 674
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 360,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1563,
+        "cache_read_input_tokens": 4647,
+        "cache_creation_input_tokens": 360,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 360
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1563,
+      "cacheReadInputTokens": 4647,
+      "cacheCreationInputTokens": 360,
+      "webSearchRequests": 0,
+      "costUSD": 0.035077399999999995,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 674,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 360,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Each transfer locks both wallet rows in a fixed order (lowest `id` first), then checks the balance and moves the money in a single statement. I haven't run this against a PostgreSQL 16 server.\n\n- **Opposite directions can't deadlock.** Alice\u2192Bob and Bob\u2192Alice both lock the lower `id` first, so neither can hold one row while waiting for the other. Neither is refused; the second simply waits for the first to commit.\n- **Balance checks see the latest value.** Under `read committed`, `SELECT ... FOR UPDATE` waits for any other transfer on those rows to finish. It then returns the committed balance, so several transfers out of one wallet are checked one after another. A transfer is only refused (`False`) when the money really isn't there.\n- **Totals stay correct.** The debit and credit happen in one `UPDATE` inside one transaction. Money is never created or lost, and the debit carries a `balance >= amount` guard as an extra safety net.\n- **Unexpected errors are retried.** A deadlock or serialization failure rolls back and retries, up to 8 times. That stays well under the 60-call limit.\n\n```python\nimport psycopg.errors as errors\n\n_RETRYABLE = (errors.SerializationFailure, errors.DeadlockDetected)\n\n\ndef transfer(db, from_id: int, to_id: int, amount: int) -> bool:\n    for _ in range(8):\n        try:\n            db.begin(\"read committed\")\n            # Lock both rows in a consistent (id) order to prevent deadlocks.\n            rows = db.execute(\n                \"SELECT id, balance FROM accounts \"\n                \"WHERE id IN (%(a)s, %(b)s) ORDER BY id FOR UPDATE\",\n                {\"a\": from_id, \"b\": to_id},\n            )\n            balances = {r[0]: r[1] for r in rows}\n            if balances.get(from_id) is None or balances[from_id] < amount:\n                db.rollback()\n                return False\n            res = db.execute(\n                \"UPDATE accounts SET balance = balance + CASE WHEN id = %(f)s \"\n                \"THEN -%(amt)s ELSE %(amt)s END \"\n                \"WHERE id IN (%(f)s, %(t)s) \"\n                \"AND (id <> %(f)s OR balance >= %(amt)s) \"\n                \"RETURNING id\",\n                {\"f\": from_id, \"t\": to_id, \"amt\": amount},\n            )\n            if len(res) != 2:\n                db.rollback()\n                return False\n            db.commit()\n            return True\n        except _RETRYABLE:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n    return False\n```",
+  "ttft_ms": 7371,
+  "type": "result",
+  "duration_ms": 14824,
+  "uuid": "b0b6740f-0fe9-4555-9f58-fbf7673a48cb",
+  "ttft_stream_ms": 998,
+  "time_to_request_ms": 154,
+  "first_content_frame_ms": 998,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

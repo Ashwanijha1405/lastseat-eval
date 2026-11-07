@@ -1,0 +1,84 @@
+The approach is a per-key transaction-scoped advisory lock, backed by a unique index where possible.
+
+- **Lock per key.** Each attempt takes `pg_advisory_xact_lock` on a hash of its idempotency key. Attempts with the same key run one at a time, while different keys proceed in parallel. If two different keys hash to the same value, they just wait for each other; nothing goes wrong.
+- **Look up, then insert.** Holding the lock, the attempt looks for an existing payment. In `read committed`, each statement takes a fresh snapshot, so this lookup sees a row committed by a competing attempt that just released the lock. If a row exists, it returns that `id`; otherwise it inserts and returns the new `id`.
+- **Unique index as a backstop.** `migrate` tries to add a unique index on `idempotency_key`. If the existing data already has duplicate keys, that fails, so it adds a plain lookup index instead. The advisory lock enforces the rule either way, and old duplicates resolve to the lowest `id`.
+- **Bounded retries.** Errors such as a deadlock or unique violation are retried after a rollback. The loop stays well under the 60-call limit, and a final lock-free read guarantees an `int` is always returned.
+
+```python
+import psycopg
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    try:
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_uq "
+            "ON payments (idempotency_key)"
+        )
+        return
+    except psycopg.errors.Error:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    # Pre-existing duplicate keys prevent a unique index; use a plain index for lookups.
+    try:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS payments_idempotency_key_idx "
+            "ON payments (idempotency_key)"
+        )
+    except psycopg.errors.Error:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            db.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 7319))",
+                (idempotency_key,),
+            )
+            rows = db.execute(
+                "SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1",
+                (idempotency_key,),
+            )
+            if rows:
+                pid = int(rows[0][0])
+                db.commit()
+                return pid
+            rows = db.execute(
+                "INSERT INTO payments (idempotency_key, customer_id, amount) "
+                "VALUES (%s, %s, %s) RETURNING id",
+                (idempotency_key, customer_id, amount),
+            )
+            pid = int(rows[0][0])
+            db.commit()
+            return pid
+        except psycopg.errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+
+    # Fallback: a payment should exist by now; read it without locking.
+    for _ in range(3):
+        try:
+            rows = db.execute(
+                "SELECT id FROM payments WHERE idempotency_key = %s ORDER BY id LIMIT 1",
+                (idempotency_key,),
+            )
+            if rows:
+                return int(rows[0][0])
+        except psycopg.errors.Error:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    return -1
+```

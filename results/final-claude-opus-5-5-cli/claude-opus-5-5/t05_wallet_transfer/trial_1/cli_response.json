@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 21530,
+  "stop_reason": "end_turn",
+  "session_id": "f08fbbd9-99ea-4d79-8ec2-0f5ca2344674",
+  "total_cost_usd": 0.0728584,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3414,
+    "cache_read_input_tokens": 1592,
+    "output_tokens": 2261,
+    "output_tokens_details": {
+      "thinking_tokens": 1532
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3414,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2261,
+        "cache_read_input_tokens": 1592,
+        "cache_creation_input_tokens": 3414,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3414
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 2261,
+      "cacheReadInputTokens": 1592,
+      "cacheCreationInputTokens": 3414,
+      "webSearchRequests": 0,
+      "costUSD": 0.0728584,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1532,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 3414,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Lock both rows in ascending `id` order, then check the balance and update.\n\n- **Deadlocks:** A\u2192B and B\u2192A both lock the lower id first, so they queue instead of deadlocking. They do not deadlock.\n- **Overdraft and lost money:** The balance check runs after the sender's row is locked, so it always sees the latest committed balance. Both rows change in one transaction, so the total stays the same and no balance goes below zero.\n- **Unexpected errors:** A bounded retry handles any deadlock or serialization error. Each attempt makes at most 6 `db` calls, so 6 attempts stay under the 60-call limit.\n\n```python\nimport psycopg.errors as errors\n\n_RETRYABLE = (\n    errors.DeadlockDetected,\n    errors.SerializationFailure,\n    errors.LockNotAvailable,\n)\n\n\ndef transfer(db, from_id: int, to_id: int, amount: int) -> bool:\n    last_exc = None\n    for _ in range(6):\n        db.begin(\"read committed\")\n        try:\n            # Lock both rows in a global order (ascending id) to avoid deadlocks.\n            rows = db.execute(\n                \"SELECT id, balance FROM accounts \"\n                \"WHERE id IN (%(a)s, %(b)s) \"\n                \"ORDER BY id FOR UPDATE\",\n                {\"a\": from_id, \"b\": to_id},\n            )\n            balances = {r[0]: r[1] for r in rows}\n            if balances.get(from_id) is None or balances.get(to_id) is None \\\n                    or balances[from_id] < amount:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE accounts SET balance = balance + CASE \"\n                \"WHEN id = %(f)s THEN -%(amt)s ELSE %(amt)s END \"\n                \"WHERE id IN (%(f)s, %(t)s)\",\n                {\"f\": from_id, \"t\": to_id, \"amt\": amount},\n            )\n            db.commit()\n            return True\n        except _RETRYABLE as e:\n            last_exc = e\n            db.rollback()\n            continue\n        except Exception:\n            db.rollback()\n            raise\n    raise last_exc\n```",
+  "ttft_ms": 16406,
+  "type": "result",
+  "duration_ms": 21861,
+  "uuid": "cc49b7b6-91d8-42ae-93db-9d47c6819163",
+  "ttft_stream_ms": 1189,
+  "time_to_request_ms": 327,
+  "first_content_frame_ms": 1190,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

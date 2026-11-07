@@ -1,0 +1,54 @@
+A single atomic statement handles this. The conditional `UPDATE ... WHERE stock >= qty` takes the product's row lock. Under READ COMMITTED, a concurrent buyer waiting on that lock re-checks the `WHERE` clause against the freshly committed stock once the lock is released. That means:
+
+- Stock can never go negative.
+- A purchase that still fits after earlier ones always succeeds. There is no serialization error or refusal just because another buyer was active.
+
+The order insert is chained to the update in the same statement through a data-modifying CTE. Both happen together or neither does, so stock plus ordered quantity is always conserved. Each statement locks only one row, so deadlocks can't happen. The bounded retry is only a safety net for unexpected transient errors.
+
+```python
+import psycopg.errors as errors
+
+_RETRYABLE = (
+    errors.SerializationFailure,
+    errors.DeadlockDetected,
+    errors.LockNotAvailable,
+)
+
+_SQL = """
+WITH upd AS (
+    UPDATE products
+       SET stock = stock - %(qty)s
+     WHERE id = %(pid)s
+       AND stock >= %(qty)s
+    RETURNING id
+)
+INSERT INTO orders (product_id, qty)
+SELECT id, %(qty)s FROM upd
+RETURNING id
+"""
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    params = {"pid": product_id, "qty": qty}
+    last_exc = None
+    for _ in range(15):
+        try:
+            db.begin("read committed")
+            rows = db.execute(_SQL, params)
+            db.commit()
+            return len(rows) == 1
+        except _RETRYABLE as e:
+            last_exc = e
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+    raise last_exc
+```

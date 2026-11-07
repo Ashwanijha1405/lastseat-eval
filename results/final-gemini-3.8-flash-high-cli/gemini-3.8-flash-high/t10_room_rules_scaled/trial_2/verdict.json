@@ -1,0 +1,54 @@
+{
+  "task_id": "t10_room_rules_scaled",
+  "solution": "results/final-gemini-3.8-flash-high-cli/gemini-3.8-flash-high/t10_room_rules_scaled/trial_2/solution.py",
+  "status": "load_error",
+  "load_error": "exec_error",
+  "load_detail": "AttributeError: module 'psycopg.errors' has no attribute 'TransactionRollbackError'",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.0,
+  "warnings": [
+    {
+      "kind": "latent_api_error",
+      "name": "psycopg.errors.TransactionRollbackError",
+      "lines": [
+        8
+      ],
+      "detail": "not defined in the pinned psycopg 3.3.6"
+    }
+  ],
+  "failure_category": "load",
+  "api": {
+    "source": "official-cli",
+    "cli": "antigravity",
+    "model_id": "gemini-3.8-flash-high",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "cli_version": "1.5.3",
+    "date_utc": "2026-11-07T10:35:51+00:00",
+    "finish_reason": "SUCCESS",
+    "completion_tokens": 54254,
+    "prompt_tokens": 21387,
+    "cost_usd": 0.0,
+    "cli_reported_cost_usd": null,
+    "seconds": 341.05,
+    "num_turns": 1,
+    "attempts": 1,
+    "provider": "Google sign-in (agy --print)",
+    "thinking_tokens": 52557,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

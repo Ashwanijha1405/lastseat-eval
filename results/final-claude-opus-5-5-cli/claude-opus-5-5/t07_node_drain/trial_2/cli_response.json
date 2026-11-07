@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 24100,
+  "stop_reason": "end_turn",
+  "session_id": "0962344e-6dba-4b0d-9323-7e4ae1667e39",
+  "total_cost_usd": 0.054052,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 359,
+    "cache_read_input_tokens": 4760,
+    "output_tokens": 2511,
+    "output_tokens_details": {
+      "thinking_tokens": 1391
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 359,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2511,
+        "cache_read_input_tokens": 4760,
+        "cache_creation_input_tokens": 359,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 359
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 2511,
+      "cacheReadInputTokens": 4760,
+      "cacheCreationInputTokens": 359,
+      "webSearchRequests": 0,
+      "costUSD": 0.054052,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1391,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 359,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The core problem is write skew. Two drains running at once could each see \"the other node still has an active replica\" for the same shard, both proceed, and leave that shard with no active replica. To prevent this, each drain first takes row locks on every shard it touches, always in ascending `id` order. Once it holds those locks, it rechecks the condition and applies the change.\n\n- **Rule 1 holds:** drains that share a shard run one after the other. In READ COMMITTED, each statement after the locks are taken sees the latest committed data. So the check always sees what earlier drains changed.\n- **Rule 2 holds:** suppose a set of drains succeeds when run one after another. Then every affected shard must have an active replica on a node outside the set. That makes the set succeed in *any* order, including whatever order the locks produce.\n- **Deadlocks:** taking locks in sorted order prevents them. A short, bounded retry loop (at most 50 `db` calls) is kept as a fallback.\n\n```python\nimport psycopg.errors as pg_errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS replicas_node_shard_idx \"\n        \"ON replicas (node_id, shard_id)\"\n    )\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS replicas_shard_active_idx \"\n        \"ON replicas (shard_id, node_id) WHERE active\"\n    )\n\n\n_LOCK_SQL = (\n    \"SELECT s.id FROM shards s \"\n    \"WHERE s.id IN (SELECT r.shard_id FROM replicas r WHERE r.node_id = %(n)s) \"\n    \"ORDER BY s.id \"\n    \"FOR NO KEY UPDATE OF s\"\n)\n\n_CHECK_SQL = (\n    \"SELECT 1 FROM replicas r \"\n    \"WHERE r.node_id = %(n)s AND r.active \"\n    \"AND NOT EXISTS (\"\n    \"  SELECT 1 FROM replicas o \"\n    \"  WHERE o.shard_id = r.shard_id AND o.node_id <> r.node_id AND o.active\"\n    \") LIMIT 1\"\n)\n\n_UPDATE_SQL = \"UPDATE replicas SET active = false WHERE node_id = %(n)s AND active\"\n\n\ndef drain_node(db, node_id: str) -> bool:\n    params = {\"n\": node_id}\n    last_exc = None\n    for _ in range(10):  # each attempt uses at most 5 db calls\n        try:\n            db.begin(\"read committed\")\n            # Serialize against any concurrent drain touching the same shards,\n            # acquiring locks in a global order (shard id) to avoid deadlocks.\n            db.execute(_LOCK_SQL, params)\n            # Fresh snapshot (READ COMMITTED) taken after locks are held.\n            if db.execute(_CHECK_SQL, params):\n                db.rollback()\n                return False\n            db.execute(_UPDATE_SQL, params)\n            db.commit()\n            return True\n        except (\n            pg_errors.DeadlockDetected,\n            pg_errors.SerializationFailure,\n            pg_errors.LockNotAvailable,\n        ) as exc:\n            last_exc = exc\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n    raise last_exc\n```",
+  "ttft_ms": 15164,
+  "type": "result",
+  "duration_ms": 24223,
+  "uuid": "7806313a-9528-4f9d-a1fc-9952a076692f",
+  "ttft_stream_ms": 877,
+  "time_to_request_ms": 137,
+  "first_content_frame_ms": 877,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 10980,
+  "stop_reason": "end_turn",
+  "session_id": "e7311c7e-6969-4a77-a896-efb42b85d13e",
+  "total_cost_usd": 0.015566499999999999,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 362,
+    "cache_read_input_tokens": 4745,
+    "output_tokens": 1364,
+    "output_tokens_details": {
+      "thinking_tokens": 692
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 362,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1364,
+        "cache_read_input_tokens": 4745,
+        "cache_creation_input_tokens": 362,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 362
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1364,
+      "cacheReadInputTokens": 4745,
+      "cacheCreationInputTokens": 362,
+      "webSearchRequests": 0,
+      "costUSD": 0.015566499999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 692,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 362,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nfrom datetime import datetime\n\n\ndef book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    db.begin(\"read committed\")\n    try:\n        # Serialize bookings per room. The lock is released at commit/rollback,\n        # and the statements below take their snapshots after the lock is held,\n        # so they see every previously committed booking for this room.\n        db.execute(\"SELECT pg_advisory_xact_lock(%s, %s)\", (727001, room_id))\n\n        rows = db.execute(\n            \"\"\"\n            SELECT 1\n            FROM bookings\n            WHERE room_id = %(room)s\n              AND starts_at < %(ends)s\n              AND ends_at > %(starts)s\n            LIMIT 1\n            \"\"\",\n            {\"room\": room_id, \"starts\": starts_at, \"ends\": ends_at},\n        )\n        if rows:\n            db.rollback()\n            return False\n\n        db.execute(\n            \"\"\"\n            INSERT INTO bookings (room_id, starts_at, ends_at)\n            VALUES (%(room)s, %(starts)s, %(ends)s)\n            \"\"\",\n            {\"room\": room_id, \"starts\": starts_at, \"ends\": ends_at},\n        )\n        db.commit()\n        return True\n    except Exception:\n        try:\n            db.rollback()\n        except Exception:\n            pass\n        raise\n```\n\nIt takes a transaction-level advisory lock keyed on the room, so concurrent requests for the same room run one at a time. Requests for different rooms don't block each other. Each request then checks for an overlap using half-open interval logic and inserts only if there is none. Because the lock is held until commit, no booking can slip in between the check and the insert, and a request is never refused or errored just because another one was in progress. No retries are needed. A request uses 5 `db` calls (4 when it returns `False`).\n\nI didn't add an exclusion constraint in `migrate`: if the existing data contained overlaps, creating it would fail and invalidate the solution. I haven't run this against a PostgreSQL server.",
+  "ttft_ms": 7057,
+  "type": "result",
+  "duration_ms": 11154,
+  "uuid": "2c1f392f-0aed-4771-8c8c-8a61e23ed11d",
+  "ttft_stream_ms": 1426,
+  "time_to_request_ms": 169,
+  "first_content_frame_ms": 1426,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

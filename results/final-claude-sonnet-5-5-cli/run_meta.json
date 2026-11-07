@@ -1,0 +1,91 @@
+{
+  "run_id": "final-claude-sonnet-5-5-cli",
+  "source": "official-cli",
+  "signature": {
+    "config": "official-cli",
+    "models": [
+      "claude-sonnet-5-5"
+    ],
+    "tasks": [
+      "t01_flash_sale",
+      "t02_on_call",
+      "t03_expense_budget",
+      "t04_room_booking",
+      "t05_wallet_transfer",
+      "t06_idempotent_payment",
+      "t07_node_drain",
+      "t08_expense_endpoints",
+      "t09_room_rules",
+      "t10_room_rules_scaled"
+    ],
+    "trials": 3,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-07T11:48:27+00:00",
+  "git_commit": "a1f7bf7365375db0fb152433bea27317a469760f",
+  "dry_run": false,
+  "trials": 3,
+  "config": "official-cli",
+  "tier": "subscription",
+  "tasks": [
+    "t01_flash_sale",
+    "t02_on_call",
+    "t03_expense_budget",
+    "t04_room_booking",
+    "t05_wallet_transfer",
+    "t06_idempotent_payment",
+    "t07_node_drain",
+    "t08_expense_endpoints",
+    "t09_room_rules",
+    "t10_room_rules_scaled"
+  ],
+  "models": [
+    {
+      "slug": "claude-sonnet-5-5",
+      "id": "claude-sonnet-5-5",
+      "source": "official-cli"
+    }
+  ],
+  "cli": {
+    "name": "claude",
+    "effort": "high",
+    "version": "2.1.319 (Claude Code)",
+    "command": [
+      "claude.EXE",
+      "-p",
+      "--model",
+      "claude-sonnet-5-5",
+      "--effort",
+      "high",
+      "--output-format",
+      "json",
+      "--tools",
+      "",
+      "--safe-mode",
+      "--strict-mcp-config",
+      "--disable-slash-commands",
+      "--no-session-persistence"
+    ],
+    "system_prompt_note": "Answers come from Claude Code headless mode (claude -p). The CLI's own system prompt is included before the task prompt, so these cells are not directly comparable with API/OpenRouter cells.",
+    "env_dropped": "ANTHROPIC_*, CLAUDE*, OPENROUTER_*, GEMINI_*, GOOGLE_API_KEY, GOOGLE_GENAI*, GOOGLE_CLOUD*, GOOGLE_APPLICATION_CREDENTIALS, LASTSEAT_*"
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "spent_usd": 0.0,
+  "complete": true,
+  "sessions": [
+    {
+      "started_utc": "2026-11-07T11:48:28+00:00",
+      "cli_version": "2.1.319 (Claude Code)",
+      "calls": 30,
+      "finished_utc": "2026-11-07T11:56:39+00:00"
+    }
+  ],
+  "api_calls": 30
+}

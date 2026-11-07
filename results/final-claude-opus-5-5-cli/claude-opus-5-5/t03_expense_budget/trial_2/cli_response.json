@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 8265,
+  "stop_reason": "end_turn",
+  "session_id": "3f552a8a-439f-45da-aac6-117541f8b983",
+  "total_cost_usd": 0.022105,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 360,
+    "cache_read_input_tokens": 4785,
+    "output_tokens": 913,
+    "output_tokens_details": {
+      "thinking_tokens": 292
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 360,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 913,
+        "cache_read_input_tokens": 4785,
+        "cache_creation_input_tokens": 360,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 360
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 913,
+      "cacheReadInputTokens": 4785,
+      "cacheCreationInputTokens": 360,
+      "webSearchRequests": 0,
+      "costUSD": 0.022105,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 292,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 360,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Approvals for the same department are serialized by locking that department's row. The expense row is locked after it, and every request takes the locks in that same order, so they can't deadlock. Under READ COMMITTED, each statement after the lock sees all approvals that committed before it. That means the budget sum is always current.\n\n```python\nimport psycopg.errors as errors\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    for _ in range(10):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"SELECT department_id FROM expenses WHERE id = %s\",\n                (expense_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            dept_id = rows[0][0]\n\n            # Serialize all approvals for this department.\n            drows = db.execute(\n                \"SELECT budget FROM departments WHERE id = %s FOR UPDATE\",\n                (dept_id,),\n            )\n            budget = drows[0][0]\n\n            erows = db.execute(\n                \"SELECT status, amount FROM expenses WHERE id = %s FOR UPDATE\",\n                (expense_id,),\n            )\n            status, amount = erows[0]\n            if status != \"pending\":\n                db.rollback()\n                return False\n\n            srows = db.execute(\n                \"SELECT COALESCE(SUM(amount), 0) FROM expenses \"\n                \"WHERE department_id = %s AND status = 'approved'\",\n                (dept_id,),\n            )\n            total = int(srows[0][0])\n            if total + amount > budget:\n                db.rollback()\n                return False\n\n            db.execute(\n                \"UPDATE expenses SET status = 'approved' WHERE id = %s\",\n                (expense_id,),\n            )\n            db.commit()\n            return True\n        except (errors.SerializationFailure, errors.DeadlockDetected):\n            db.rollback()\n            continue\n    return False\n```",
+  "ttft_ms": 3949,
+  "type": "result",
+  "duration_ms": 8412,
+  "uuid": "608b62d6-52ad-4e3c-9f27-b7047ca31438",
+  "ttft_stream_ms": 843,
+  "time_to_request_ms": 146,
+  "first_content_frame_ms": 843,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

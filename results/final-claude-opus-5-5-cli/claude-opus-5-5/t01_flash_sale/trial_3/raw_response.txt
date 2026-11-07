@@ -1,0 +1,37 @@
+A single conditional `UPDATE` under READ COMMITTED does the job. PostgreSQL row-locks the product and, if another purchase changed the row first, checks `stock >= qty` again against the newest version. So stock can never go negative, and a purchase that still fits after the earlier ones is never wrongly refused. The order insert happens in the same transaction, so stock and orders always change together.
+
+```python
+import psycopg.errors
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "UPDATE products SET stock = stock - %(qty)s "
+                "WHERE id = %(pid)s AND stock >= %(qty)s "
+                "RETURNING stock",
+                {"pid": product_id, "qty": qty},
+            )
+            if not rows:
+                db.rollback()
+                return False
+            db.execute(
+                "INSERT INTO orders (product_id, qty) VALUES (%(pid)s, %(qty)s)",
+                {"pid": product_id, "qty": qty},
+            )
+            db.commit()
+            return True
+        except (
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+            psycopg.errors.LockNotAvailable,
+        ):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+```

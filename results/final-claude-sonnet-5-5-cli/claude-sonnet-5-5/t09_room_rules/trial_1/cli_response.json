@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 20930,
+  "stop_reason": "end_turn",
+  "session_id": "936d75a8-c7c9-4710-8629-5eabca48469d",
+  "total_cost_usd": 0.046667600000000004,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4023,
+    "cache_read_input_tokens": 1516,
+    "output_tokens": 3042,
+    "output_tokens_details": {
+      "thinking_tokens": 1282
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 4023,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 3042,
+        "cache_read_input_tokens": 1516,
+        "cache_creation_input_tokens": 4023,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4023
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 3042,
+      "cacheReadInputTokens": 1516,
+      "cacheCreationInputTokens": 4023,
+      "webSearchRequests": 0,
+      "costUSD": 0.046667600000000004,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 1282,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 4023,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The approach is to serialize all writes per room by taking a lock on the room's row, then checking the rules against fresh committed data under that lock. Requests for different rooms never block each other, and a request only ever locks one room, so deadlocks can't occur. Each statement under the lock runs in read committed mode, so it sees everything committed by the previous lock holder. Because writes to a room are strictly serialized, any set of requests that would all succeed in some serial order will also all succeed when concurrent.\n\n```python\nfrom datetime import datetime, timedelta, timezone\n\nimport psycopg.errors\n\n_MAX_ATTEMPTS = 3\n_RETRYABLE = (\n    psycopg.errors.SerializationFailure,\n    psycopg.errors.DeadlockDetected,\n)\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS bookings_room_start_idx \"\n        \"ON bookings (room_id, starts_at)\"\n    )\n\n\ndef _day_bounds(ts: datetime):\n    u = ts.astimezone(timezone.utc)\n    start = u.replace(hour=0, minute=0, second=0, microsecond=0)\n    return start, start + timedelta(days=1)\n\n\ndef _lock_room(db, room_id):\n    return db.execute(\n        \"SELECT id FROM rooms WHERE id = %s FOR NO KEY UPDATE\", (room_id,)\n    )\n\n\ndef _run(db, fn):\n    for _ in range(_MAX_ATTEMPTS):\n        try:\n            return fn()\n        except _RETRYABLE:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n    return False\n\n\ndef book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    day_start, day_end = _day_bounds(starts_at)\n\n    def attempt():\n        db.begin(\"read committed\")\n        if not _lock_room(db, room_id):\n            db.rollback()\n            return False\n        rows = db.execute(\n            \"SELECT \"\n            \" count(*) FILTER (WHERE starts_at < %(e)s AND ends_at > %(s)s), \"\n            \" count(*) FILTER (WHERE starts_at >= %(ds)s AND starts_at < %(de)s) \"\n            \"FROM bookings WHERE room_id = %(r)s\",\n            {\"e\": ends_at, \"s\": starts_at, \"ds\": day_start, \"de\": day_end, \"r\": room_id},\n        )\n        overlaps, per_day = rows[0]\n        if overlaps > 0 or per_day >= 3:\n            db.rollback()\n            return False\n        db.execute(\n            \"INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)\",\n            (room_id, starts_at, ends_at),\n        )\n        db.commit()\n        return True\n\n    return _run(db, attempt)\n\n\ndef reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:\n    day_start, day_end = _day_bounds(new_starts_at)\n\n    def attempt():\n        # A booking never changes room, so reading room_id before locking is safe.\n        pre = db.execute(\"SELECT room_id FROM bookings WHERE id = %s\", (booking_id,))\n        if not pre:\n            return False\n        room_id = pre[0][0]\n\n        db.begin(\"read committed\")\n        _lock_room(db, room_id)\n        cur = db.execute(\n            \"SELECT id FROM bookings WHERE id = %s FOR UPDATE\", (booking_id,)\n        )\n        if not cur:\n            db.rollback()\n            return False\n        rows = db.execute(\n            \"SELECT \"\n            \" count(*) FILTER (WHERE starts_at < %(e)s AND ends_at > %(s)s), \"\n            \" count(*) FILTER (WHERE starts_at >= %(ds)s AND starts_at < %(de)s) \"\n            \"FROM bookings WHERE room_id = %(r)s AND id <> %(b)s\",\n            {\n                \"e\": new_ends_at, \"s\": new_starts_at,\n                \"ds\": day_start, \"de\": day_end,\n                \"r\": room_id, \"b\": booking_id,\n            },\n        )\n        overlaps, others_on_day = rows[0]\n        if overlaps > 0 or others_on_day >= 3:\n            db.rollback()\n            return False\n        db.execute(\n            \"UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s\",\n            (new_starts_at, new_ends_at, booking_id),\n        )\n        db.commit()\n        return True\n\n    return _run(db, attempt)\n\n\ndef cancel(db, booking_id: int) -> bool:\n    def attempt():\n        pre = db.execute(\"SELECT room_id FROM bookings WHERE id = %s\", (booking_id,))\n        if not pre:\n            return False\n        room_id = pre[0][0]\n\n        db.begin(\"read committed\")\n        _lock_room(db, room_id)\n        deleted = db.execute(\n            \"DELETE FROM bookings WHERE id = %s RETURNING id\", (booking_id,)\n        )\n        db.commit()\n        return bool(deleted)\n\n    return _run(db, attempt)\n```",
+  "ttft_ms": 12411,
+  "type": "result",
+  "duration_ms": 21092,
+  "uuid": "5cc32eab-9aaf-4fcf-919d-ee96a3aa8561",
+  "ttft_stream_ms": 1494,
+  "time_to_request_ms": 156,
+  "first_content_frame_ms": 1494,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

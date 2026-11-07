@@ -1,0 +1,41 @@
+```python
+import psycopg.errors
+from psycopg import errors
+
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    first, second = (from_id, to_id) if from_id < to_id else (to_id, from_id)
+    for _ in range(5):
+        try:
+            db.begin("read committed")
+            # Lock both rows in a consistent (id) order so opposite-direction
+            # transfers can never deadlock, and balances are read under lock.
+            rows = {}
+            for acc_id in (first, second):
+                r = db.execute(
+                    "SELECT balance FROM accounts WHERE id = %s FOR UPDATE",
+                    (acc_id,),
+                )
+                rows[acc_id] = r[0][0]
+            if rows[from_id] < amount:
+                db.rollback()
+                return False
+            db.execute(
+                "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                (amount, from_id),
+            )
+            db.execute(
+                "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                (amount, to_id),
+            )
+            db.commit()
+            return True
+        except (errors.DeadlockDetected, errors.SerializationFailure):
+            db.rollback()
+            continue
+    return False
+```
+
+Both rows are locked with `SELECT ... FOR UPDATE` in ascending id order, whatever the transfer direction. That rules out deadlocks between opposite transfers, and the balance check runs on the locked, current value. So balances can't go negative and no money is created or lost. The deadlock/serialization retry is only a bounded safety net (at most 5 attempts, about 6 db calls each).
+
+One limit: transfers that only succeed in a particular order (for example B→A that depends on funds from a concurrent A→B) can't be guaranteed, because the lock order decides which runs first and an insufficient balance must return `False` immediately.

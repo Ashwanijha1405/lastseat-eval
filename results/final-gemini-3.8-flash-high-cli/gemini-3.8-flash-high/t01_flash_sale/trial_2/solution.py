@@ -1,0 +1,36 @@
+from psycopg import errors
+
+
+def migrate(db) -> None:
+    pass
+
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    for _ in range(12):
+        try:
+            db.begin("read committed")
+            rows = db.execute(
+                "UPDATE products SET stock = stock - %(qty)s WHERE id = %(id)s AND stock >= %(qty)s RETURNING id",
+                {"id": product_id, "qty": qty},
+            )
+            if rows:
+                db.execute(
+                    "INSERT INTO orders (product_id, qty) VALUES (%(id)s, %(qty)s)",
+                    {"id": product_id, "qty": qty},
+                )
+                db.commit()
+                return True
+            else:
+                db.rollback()
+                return False
+        except (
+            errors.TransactionRollbackError,
+            errors.OperationalError,
+            errors.SerializationFailure,
+            errors.DeadlockDetected,
+        ):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    return False

@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_doctors_shift_on_call ON doctors (shift_id, id) WHERE on_call = true\"\n    )\n\n\ndef go_off_call(db, doctor_id: int) -> bool:\n    max_retries = 3\n    for attempt in range(max_retries):\n        try:\n            db.begin(\"read committed\")\n            rows = db.execute(\n                \"SELECT shift_id FROM doctors WHERE id = %s\", (doctor_id,)\n            )\n            if not rows:\n                db.rollback()\n                return False\n            shift_id = rows[0][0]\n\n            # Serialize operations within the same shift to prevent race conditions\n            # while allowing concurrent operations across different shifts.\n            db.execute(\"SELECT pg_advisory_xact_lock(%s::bigint)\", (shift_id,))\n\n            # In read committed mode, this query sees the latest committed state\n            # after acquiring the advisory lock. We atomically verify another doctor\n            # is on call and update this doctor's status.\n            updated = db.execute(\n                \"\"\"\n                UPDATE doctors\n                SET on_call = false\n                WHERE id = %(doctor_id)s\n                  AND on_call = true\n                  AND EXISTS (\n                      SELECT 1 FROM doctors\n                      WHERE shift_id = %(shift_id)s\n                        AND on_call = true\n                        AND id != %(doctor_id)s\n                  )\n                RETURNING id\n                \"\"\",\n                {\"doctor_id\": doctor_id, \"shift_id\": shift_id},\n            )\n            db.commit()\n            return bool(updated)\n        except errors.Error:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            if attempt == max_retries - 1:\n                raise\n\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 56684,
+    "output_tokens": 38480,
+    "thinking_tokens": 37992,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

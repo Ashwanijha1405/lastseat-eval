@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 13332,
+  "stop_reason": "end_turn",
+  "session_id": "679c1872-b80d-4954-a918-6c702d831acc",
+  "total_cost_usd": 0.021276000000000003,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 362,
+    "cache_read_input_tokens": 5140,
+    "output_tokens": 1931,
+    "output_tokens_details": {
+      "thinking_tokens": 602
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 362,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1931,
+        "cache_read_input_tokens": 5140,
+        "cache_creation_input_tokens": 362,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 362
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1931,
+      "cacheReadInputTokens": 5140,
+      "cacheCreationInputTokens": 362,
+      "webSearchRequests": 0,
+      "costUSD": 0.021276000000000003,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 602,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 362,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "All three functions lock the department row with `SELECT ... FOR UPDATE`, so every change that affects a department's approved total is serialized per department. I haven't run this against a database.\n\n- **Lock order:** `expenses.department_id` never changes, so it can be read without a lock. Each request then takes a single lock, on the department row, and cannot deadlock.\n- **Fresh reads:** after the lock is held, the expense and the approved total are re-read. In read committed each statement gets a new snapshot, so these reads see everything committed by earlier lock holders.\n- **Rule 1:** only the lock holder changes approved amounts, and it checks the limit against current data first, so the approved total never exceeds the budget.\n- **Rule 2:** a request returns `False` only when it fails against the committed state it saw under the lock. Requests that would all succeed in some sequential order therefore don't fail just because they overlap.\n\n```python\nimport psycopg.errors\n\n\ndef _lock_dept(db, dept_id):\n    rows = db.execute(\n        \"SELECT budget FROM departments WHERE id = %s FOR UPDATE\", (dept_id,)\n    )\n    return rows[0][0]\n\n\ndef _approved_total(db, dept_id):\n    rows = db.execute(\n        \"SELECT COALESCE(SUM(amount), 0) FROM expenses \"\n        \"WHERE department_id = %s AND status = 'approved'\",\n        (dept_id,),\n    )\n    return int(rows[0][0])\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    rows = db.execute(\n        \"SELECT department_id FROM expenses WHERE id = %s\", (expense_id,)\n    )\n    dept_id = rows[0][0]\n    db.begin(\"read committed\")\n    try:\n        budget = _lock_dept(db, dept_id)\n        rows = db.execute(\n            \"SELECT status, amount FROM expenses WHERE id = %s\", (expense_id,)\n        )\n        status, amount = rows[0]\n        if status != \"pending\":\n            db.rollback()\n            return False\n        total = _approved_total(db, dept_id)\n        if total + amount > budget:\n            db.rollback()\n            return False\n        db.execute(\n            \"UPDATE expenses SET status = 'approved' WHERE id = %s\", (expense_id,)\n        )\n        db.commit()\n        return True\n    except Exception:\n        try:\n            db.rollback()\n        except Exception:\n            pass\n        raise\n\n\ndef edit_expense(db, expense_id: int, new_amount: int) -> bool:\n    rows = db.execute(\n        \"SELECT department_id FROM expenses WHERE id = %s\", (expense_id,)\n    )\n    dept_id = rows[0][0]\n    db.begin(\"read committed\")\n    try:\n        budget = _lock_dept(db, dept_id)\n        rows = db.execute(\n            \"SELECT status, amount FROM expenses WHERE id = %s\", (expense_id,)\n        )\n        status, amount = rows[0]\n        if status == \"approved\":\n            total = _approved_total(db, dept_id)\n            if total - amount + new_amount > budget:\n                db.rollback()\n                return False\n        db.execute(\n            \"UPDATE expenses SET amount = %s WHERE id = %s\", (new_amount, expense_id)\n        )\n        db.commit()\n        return True\n    except Exception:\n        try:\n            db.rollback()\n        except Exception:\n            pass\n        raise\n\n\ndef change_budget(db, dept_id: int, new_budget: int) -> bool:\n    db.begin(\"read committed\")\n    try:\n        _lock_dept(db, dept_id)\n        total = _approved_total(db, dept_id)\n        if total > new_budget:\n            db.rollback()\n            return False\n        db.execute(\n            \"UPDATE departments SET budget = %s WHERE id = %s\", (new_budget, dept_id)\n        )\n        db.commit()\n        return True\n    except Exception:\n        try:\n            db.rollback()\n        except Exception:\n            pass\n        raise\n```",
+  "ttft_ms": 6588,
+  "type": "result",
+  "duration_ms": 13527,
+  "uuid": "3acc3120-1b71-4a08-afa7-0d1dba841102",
+  "ttft_stream_ms": 1538,
+  "time_to_request_ms": 199,
+  "first_content_frame_ms": 1538,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

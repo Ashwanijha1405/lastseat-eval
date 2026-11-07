@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom datetime import datetime\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\"CREATE EXTENSION IF NOT EXISTS btree_gist\")\n    try:\n        db.execute(\n            \"ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap \"\n            \"EXCLUDE USING gist (room_id WITH =, (tstzrange(starts_at, ends_at)) WITH &&)\"\n        )\n    except (errors.DuplicateObject, errors.DuplicateTable):\n        pass\n\n\ndef book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    for _ in range(15):\n        try:\n            db.begin()\n            db.execute(\n                \"INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)\",\n                (room_id, starts_at, ends_at),\n            )\n            db.commit()\n            return True\n        except errors.ExclusionViolation:\n            db.rollback()\n            return False\n        except (\n            errors.TransactionRollback,\n            errors.SerializationFailure,\n            errors.DeadlockDetected,\n            errors.LockNotAvailable,\n        ):\n            db.rollback()\n            continue\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 25023,
+    "output_tokens": 42886,
+    "thinking_tokens": 42546,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

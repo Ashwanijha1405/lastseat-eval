@@ -1,0 +1,56 @@
+```python
+import psycopg.errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS expenses_dept_status_idx "
+        "ON expenses (department_id, status)"
+    )
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    # department_id never changes, so it can be read without a lock.
+    rows = db.execute(
+        "SELECT department_id FROM expenses WHERE id = %s", (expense_id,)
+    )
+    if not rows:
+        return False
+    dept_id = rows[0][0]
+
+    db.begin("read committed")
+    try:
+        # Serialize all approvals for this department by locking its row.
+        # Only one lock is taken per transaction, so deadlocks can't occur.
+        # Statements after the lock get a fresh snapshot (read committed),
+        # so they see every approval committed by earlier lock holders.
+        brow = db.execute(
+            "SELECT budget FROM departments WHERE id = %s FOR UPDATE",
+            (dept_id,),
+        )
+        budget = brow[0][0]
+
+        res = db.execute(
+            """
+            UPDATE expenses e
+               SET status = 'approved'
+             WHERE e.id = %(eid)s
+               AND e.status = 'pending'
+               AND e.amount + (
+                     SELECT COALESCE(SUM(a.amount), 0)
+                       FROM expenses a
+                      WHERE a.department_id = %(did)s
+                        AND a.status = 'approved'
+                   ) <= %(budget)s
+            RETURNING e.id
+            """,
+            {"eid": expense_id, "did": dept_id, "budget": budget},
+        )
+        db.commit()
+        return bool(res)
+    except Exception:
+        db.rollback()
+        raise
+```
+
+Each approval locks its department's row with `FOR UPDATE`, so approvals for the same department run one at a time while different departments stay parallel. Under read committed, the `UPDATE` takes its snapshot after the lock is granted, so its sum includes every approval committed by earlier lock holders. That keeps the total within budget (rule 1). It also means an approval that fits in sequence never fails because of concurrency, and each request takes only one lock, so it can't deadlock (rule 2). I haven't run this against a PostgreSQL server.

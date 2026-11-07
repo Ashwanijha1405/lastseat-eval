@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "text": "```python\nfrom __future__ import annotations\n\nfrom datetime import datetime\nfrom psycopg import errors\n\n\ndef migrate(db) -> None:\n    db.execute(\"CREATE EXTENSION IF NOT EXISTS btree_gist\")\n    try:\n        db.execute(\n            \"ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap \"\n            \"EXCLUDE USING gist (room_id WITH =, (tstzrange(starts_at, ends_at)) WITH &&)\"\n        )\n    except (errors.DuplicateTable, errors.DuplicateObject):\n        try:\n            db.rollback()\n        except Exception:\n            pass\n\n\ndef book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:\n    for _ in range(10):\n        try:\n            db.begin()\n            rows = db.execute(\n                \"\"\"\n                INSERT INTO bookings (room_id, starts_at, ends_at)\n                SELECT %(room_id)s, %(starts_at)s, %(ends_at)s\n                WHERE NOT EXISTS (\n                    SELECT 1 FROM bookings\n                    WHERE room_id = %(room_id)s\n                      AND tstzrange(starts_at, ends_at) && tstzrange(%(starts_at)s, %(ends_at)s)\n                )\n                RETURNING id\n                \"\"\",\n                {\"room_id\": room_id, \"starts_at\": starts_at, \"ends_at\": ends_at},\n            )\n            if rows:\n                db.commit()\n                return True\n            else:\n                db.rollback()\n                return False\n        except (errors.DeadlockDetected, errors.SerializationFailure, errors.LockNotAvailable):\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            continue\n        except errors.ExclusionViolation:\n            try:\n                db.rollback()\n            except Exception:\n                pass\n            return False\n    return False\n```\n",
+    "models_shown": [
+      "gemini-3.8-flash-high"
+    ],
+    "finish": "SUCCESS",
+    "input_tokens": 22084,
+    "output_tokens": 60400,
+    "thinking_tokens": 59915,
+    "reported_cost_usd": null,
+    "num_turns": 1,
+    "tool_calls_denied": 1,
+    "tool_calls_ran": []
+  }
+}

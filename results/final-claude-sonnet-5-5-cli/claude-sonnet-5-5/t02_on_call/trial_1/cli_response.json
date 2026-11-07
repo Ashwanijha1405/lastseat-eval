@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 8753,
+  "stop_reason": "end_turn",
+  "session_id": "aa2bc74e-604e-4460-916f-9614a2d03119",
+  "total_cost_usd": 0.024637600000000003,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3423,
+    "cache_read_input_tokens": 1516,
+    "output_tokens": 1079,
+    "output_tokens_details": {
+      "thinking_tokens": 518
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3423,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1079,
+        "cache_read_input_tokens": 1516,
+        "cache_creation_input_tokens": 3423,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3423
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1079,
+      "cacheReadInputTokens": 1516,
+      "cacheCreationInputTokens": 3423,
+      "webSearchRequests": 0,
+      "costUSD": 0.024637600000000003,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 518,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 3423,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "The function takes a row lock on the doctor's shift before checking, so requests for the same shift run one after another. Under read committed, the count made after the lock is acquired sees every earlier commit. That closes the write-skew gap where two doctors each see the other still on call and both go off. Requests for different shifts don't block each other, and no request fails just because another is running.\n\n```python\nimport psycopg.errors\n\n\ndef go_off_call(db, doctor_id: int) -> bool:\n    for _ in range(5):\n        try:\n            db.begin(\"read committed\")\n            # Lock the doctor's shift row: serializes all requests within the same shift.\n            rows = db.execute(\n                \"SELECT s.id FROM shifts s JOIN doctors d ON d.shift_id = s.id \"\n                \"WHERE d.id = %s FOR UPDATE OF s\",\n                (doctor_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            shift_id = rows[0][0]\n            # Fresh statement after lock acquisition sees all previously committed changes.\n            cnt = db.execute(\n                \"SELECT count(*) FROM doctors \"\n                \"WHERE shift_id = %s AND on_call AND id <> %s\",\n                (shift_id, doctor_id),\n            )[0][0]\n            if cnt >= 1:\n                db.execute(\n                    \"UPDATE doctors SET on_call = false WHERE id = %s\",\n                    (doctor_id,),\n                )\n                db.commit()\n                return True\n            db.rollback()\n            return False\n        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):\n            db.rollback()\n            continue\n    return False\n```",
+  "ttft_ms": 5600,
+  "type": "result",
+  "duration_ms": 8914,
+  "uuid": "766911a1-6fc6-492b-9ecc-89b45036a875",
+  "ttft_stream_ms": 1400,
+  "time_to_request_ms": 156,
+  "first_content_frame_ms": 1401,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

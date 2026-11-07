@@ -1,0 +1,62 @@
+The danger here is write skew: two doctors in the same shift each see the other as on call, both go off call, and the shift is left with nobody. To prevent it, each request takes a row lock on its shift before checking or changing anything. That makes the requests for one shift run one at a time. Requests for different shifts never block each other.
+
+**Rule 1 (every shift keeps someone on call):** under read committed, each statement gets a fresh snapshot. So the count of other on-call doctors runs after the shift lock is held and sees every change committed by whoever held the lock before. Two requests can't both decide "someone else is still on call" from stale data.
+
+**Rule 2 (requests that fit must succeed):** each request only succeeds or fails based on how many doctors in its shift are on call when it runs. If a set of requests all succeed one after another, the number of requesters in each shift is at most the number on call minus one. That holds whatever order the lock grants them in, so every one of them still returns `True`.
+
+**Deadlocks:** each request locks exactly one shift row and then updates only its own doctor row. Changing `on_call` doesn't touch the foreign-key column, so it doesn't conflict with the shift lock. There is no lock cycle. A bounded retry is still included in case of any transient error.
+
+```python
+import psycopg.errors as errors
+
+
+def migrate(db) -> None:
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS doctors_shift_on_call_idx "
+        "ON doctors (shift_id) WHERE on_call"
+    )
+
+
+def go_off_call(db, doctor_id: int) -> bool:
+    for _ in range(10):
+        try:
+            db.begin("read committed")
+            # Serialize all requests for the same shift by locking the shift row.
+            rows = db.execute(
+                "SELECT s.id FROM shifts s "
+                "JOIN doctors d ON d.shift_id = s.id "
+                "WHERE d.id = %(d)s "
+                "FOR UPDATE OF s",
+                {"d": doctor_id},
+            )
+            if not rows:
+                db.rollback()
+                return False
+            shift_id = rows[0][0]
+
+            # Fresh snapshot (read committed) taken after acquiring the lock.
+            others = db.execute(
+                "SELECT count(*) FROM doctors "
+                "WHERE shift_id = %(s)s AND on_call AND id <> %(d)s",
+                {"s": shift_id, "d": doctor_id},
+            )[0][0]
+
+            if others > 0:
+                db.execute(
+                    "UPDATE doctors SET on_call = false WHERE id = %(d)s",
+                    {"d": doctor_id},
+                )
+                db.commit()
+                return True
+
+            db.rollback()
+            return False
+        except (errors.SerializationFailure, errors.DeadlockDetected,
+                errors.LockNotAvailable):
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+    return False
+```

@@ -1,0 +1,102 @@
+{
+  "duration_api_ms": 9755,
+  "stop_reason": "end_turn",
+  "session_id": "3327ade2-8ef1-4883-b522-8585ad917f03",
+  "total_cost_usd": 0.0276596,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3556,
+    "cache_read_input_tokens": 1516,
+    "output_tokens": 1328,
+    "output_tokens_details": {
+      "thinking_tokens": 540
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3556,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1328,
+        "cache_read_input_tokens": 1516,
+        "cache_creation_input_tokens": 3556,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3556
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 1328,
+      "cacheReadInputTokens": 1516,
+      "cacheCreationInputTokens": 3556,
+      "webSearchRequests": 0,
+      "costUSD": 0.0276596,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 540,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 3556,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 1,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "```python\nimport psycopg.errors\n\n\ndef approve_expense(db, expense_id: int) -> bool:\n    for _ in range(5):\n        try:\n            db.begin(\"read committed\")\n\n            # department_id never changes, so reading it without a lock is safe.\n            rows = db.execute(\n                \"SELECT department_id FROM expenses WHERE id = %s\",\n                (expense_id,),\n            )\n            if not rows:\n                db.rollback()\n                return False\n            dept_id = rows[0][0]\n\n            # Serialize all approvals for this department. In READ COMMITTED,\n            # each later statement takes a fresh snapshot, so after acquiring\n            # this lock we see every previously committed approval.\n            budget_rows = db.execute(\n                \"SELECT budget FROM departments WHERE id = %s FOR UPDATE\",\n                (dept_id,),\n            )\n            budget = budget_rows[0][0]\n\n            updated = db.execute(\n                \"\"\"\n                UPDATE expenses\n                   SET status = 'approved'\n                 WHERE id = %(eid)s\n                   AND status = 'pending'\n                   AND amount + (\n                         SELECT COALESCE(SUM(amount), 0)\n                           FROM expenses\n                          WHERE department_id = %(did)s\n                            AND status = 'approved'\n                       ) <= %(budget)s\n                RETURNING id\n                \"\"\",\n                {\"eid\": expense_id, \"did\": dept_id, \"budget\": budget},\n            )\n            db.commit()\n            return bool(updated)\n        except (\n            psycopg.errors.DeadlockDetected,\n            psycopg.errors.SerializationFailure,\n        ):\n            db.rollback()\n            continue\n    return False\n```\n\nThe function takes a row lock on the department (`SELECT ... FOR UPDATE`), so approvals for the same department run one at a time while different departments run in parallel. Under READ COMMITTED, the check-and-update statement runs after the lock is acquired and sees all previously committed approvals. Rule 1 holds because the budget check and the update happen atomically under the lock. Rule 2 holds because waiting requests are queued rather than rejected, and each is judged against the true committed total, exactly as in a sequential run. The department row is only locked, never modified. The retry loop is bounded and only triggers on deadlock or serialization errors, which shouldn't occur since each transaction holds just one lock.",
+  "ttft_ms": 5288,
+  "type": "result",
+  "duration_ms": 9892,
+  "uuid": "14d5dd7d-55c8-4b41-bc40-fe01788af951",
+  "ttft_stream_ms": 1360,
+  "time_to_request_ms": 128,
+  "first_content_frame_ms": 1360,
+  "queued_turn_count": 0,
+  "result_index": 0,
+  "credential_expires_at": "2026-11-12T20:16:10.189Z"
+}

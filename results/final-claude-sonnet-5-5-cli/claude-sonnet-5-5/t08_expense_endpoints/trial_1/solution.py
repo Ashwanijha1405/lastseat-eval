@@ -1,0 +1,96 @@
+import psycopg.errors
+
+_MAX_ATTEMPTS = 5
+
+
+def _run(db, fn):
+    last = None
+    for _ in range(_MAX_ATTEMPTS):
+        db.begin("read committed")
+        try:
+            result = fn(db)
+            db.commit()
+            return result
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected) as e:
+            last = e
+            db.rollback()
+        except Exception:
+            db.rollback()
+            raise
+    raise last
+
+
+def _lock_dept_for_expense(db, expense_id):
+    # department_id never changes, so reading it without a lock is safe
+    rows = db.execute(
+        "SELECT department_id FROM expenses WHERE id = %s", (expense_id,)
+    )
+    dept_id = rows[0][0]
+    brow = db.execute(
+        "SELECT budget FROM departments WHERE id = %s FOR UPDATE", (dept_id,)
+    )
+    return dept_id, brow[0][0]
+
+
+def _approved_total(db, dept_id):
+    rows = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+        "WHERE department_id = %s AND status = 'approved'",
+        (dept_id,),
+    )
+    return int(rows[0][0])
+
+
+def approve_expense(db, expense_id: int) -> bool:
+    def work(db):
+        dept_id, budget = _lock_dept_for_expense(db, expense_id)
+        # re-read under the department lock for fresh state
+        row = db.execute(
+            "SELECT status, amount FROM expenses WHERE id = %s", (expense_id,)
+        )[0]
+        status, amount = row
+        if status != "pending":
+            return False
+        total = _approved_total(db, dept_id)
+        if total + amount > budget:
+            return False
+        db.execute(
+            "UPDATE expenses SET status = 'approved' WHERE id = %s", (expense_id,)
+        )
+        return True
+
+    return _run(db, work)
+
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    def work(db):
+        dept_id, budget = _lock_dept_for_expense(db, expense_id)
+        status, amount = db.execute(
+            "SELECT status, amount FROM expenses WHERE id = %s", (expense_id,)
+        )[0]
+        if status == "approved":
+            total = _approved_total(db, dept_id)
+            if total - amount + new_amount > budget:
+                return False
+        db.execute(
+            "UPDATE expenses SET amount = %s WHERE id = %s", (new_amount, expense_id)
+        )
+        return True
+
+    return _run(db, work)
+
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    def work(db):
+        db.execute(
+            "SELECT budget FROM departments WHERE id = %s FOR UPDATE", (dept_id,)
+        )
+        total = _approved_total(db, dept_id)
+        if total > new_budget:
+            return False
+        db.execute(
+            "UPDATE departments SET budget = %s WHERE id = %s", (new_budget, dept_id)
+        )
+        return True
+
+    return _run(db, work)
