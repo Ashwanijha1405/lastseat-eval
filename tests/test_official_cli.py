@@ -231,3 +231,54 @@ def test_end_to_end_with_a_fake_agy(tmp_path, monkeypatch):
     v = json.loads((run_dir / "gemini-3.8-flash-high" / "t01_flash_sale" / "trial_1" / "verdict.json")
                    .read_text(encoding="utf-8"))
     assert v["passed"] is True and v["api"]["tool_calls_denied"] == 1 and v["api"]["cli"] == "antigravity"
+
+
+@pytest.mark.parametrize("why, transient", [
+    ("cli_error: exit 0, status ERROR: The stream was interrupted. Please continue the task", True),
+    ("cli_error: exit 1, status ERROR: 503 UNAVAILABLE", True),
+    ("usage_limit: exit 1, status ERROR: RESOURCE_EXHAUSTED", False),     # a limit stops at once
+    ("tool_ran: the CLI ran ['view_file']", False),
+    ("timeout after 1800 s", False),
+    ("cli_error: exit 1, no result event: Error: authentication required", False),
+])
+def test_only_transient_cli_errors_are_retried(why, transient):
+    assert cli_host.is_transient(why) == transient
+
+
+FLAKY_AGY = r'''
+import json, sys
+from pathlib import Path
+sys.stdin.readline()
+count = Path(sys.argv[2]); n = int(count.read_text()) + 1; count.write_text(str(n))
+if n == 1:
+    print(json.dumps({"event": "result", "result": {"status": "ERROR", "response": "partial ```python\nx=1\n```",
+          "error": "The stream was interrupted. Please continue the task you were working on."}}))
+    sys.exit(0)
+code = Path(sys.argv[1]).read_text()
+print(json.dumps({"event": "init", "init": {"model": "gemini-3.8-flash-high"}}))
+print(json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1,
+      "response": "```python\n" + code + "```\n", "usage": {"input_tokens": 10, "output_tokens": 20}}}))
+'''
+
+
+def test_a_transient_error_is_retried_and_the_error_answer_is_never_graded(tmp_path, monkeypatch):
+    results = tmp_path / "results"
+    results.mkdir()
+    monkeypatch.setattr(official_cli, "RESULTS", results)
+    fake, count = tmp_path / "flaky_agy.py", tmp_path / "count"
+    fake.write_text(FLAKY_AGY, encoding="utf-8")
+    count.write_text("0")
+    ref = TASKS_DIR / "t01_flash_sale" / "reference.py"
+    monkeypatch.setattr(cli_host, "agy_exe", lambda: "agy")
+    monkeypatch.setattr(cli_host, "cli_version", lambda exe: "1.5.3")
+    monkeypatch.setattr(cli_host, "agy_preflight", lambda: None)
+    monkeypatch.setattr(cli_host, "agy_command", lambda exe, model: [sys.executable, str(fake), str(ref), str(count)])
+    assert official_cli.main(["prepare", "--run-id", "f", "--cli", "antigravity", "--model", "gemini-3.8-flash-high",
+                              "--trials", "1", "--task", "t01_flash_sale"]) == 0
+    run_dir = results / "f"
+    assert cli_host.run(run_dir) == 0 and count.read_text() == "2"
+    t1 = run_dir / "gemini-3.8-flash-high" / "t01_flash_sale" / "trial_1"
+    assert (t1 / "raw_cli_stdout.attempt1.txt").exists()
+    assert "x=1" not in (t1 / "raw_response.txt").read_text(encoding="utf-8")   # the second answer is graded
+    api = json.loads((t1 / "api.json").read_text(encoding="utf-8"))
+    assert api["attempts"] == 2

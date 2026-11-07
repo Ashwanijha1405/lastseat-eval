@@ -42,6 +42,10 @@ import time
 from pathlib import Path
 
 CALL_TIMEOUT_S = 30 * 60
+MAX_ATTEMPTS = 3  # per cell, only for transient errors (as the OpenRouter runner retries transport errors)
+# A server or stream hiccup, not the model's answer and not a usage limit: worth one more fresh call.
+TRANSIENT = re.compile(r"stream was interrupted|overloaded|UNAVAILABLE|\b5\d\d\b|internal (server )?error"
+                       r"|deadline exceeded|connection (reset|closed)", re.IGNORECASE)
 # Anything that could change auth or routing (e.g. an API key would make Gemini a paid route) or leak a key.
 DROP_ENV = re.compile(r"^(ANTHROPIC_|CLAUDE|OPENROUTER_|GEMINI_|GOOGLE_API_KEY$|GOOGLE_GENAI|GOOGLE_CLOUD"
                       r"|GOOGLE_APPLICATION_CREDENTIALS$|LASTSEAT_)", re.IGNORECASE)
@@ -125,6 +129,11 @@ def classify(returncode: int, stdout: str, stderr: str) -> tuple[dict | None, st
     if not isinstance(text, str) or not text.strip():
         return result, "cli_error: empty result"
     return result, None
+
+
+def is_transient(why: str) -> bool:
+    """True for cli_error reasons worth retrying; usage limits, tool runs and timeouts are not."""
+    return why.startswith("cli_error") and bool(TRANSIENT.search(why))
 
 
 def models_shown(result: dict) -> list[str]:
@@ -290,10 +299,18 @@ def run(run_dir: Path) -> int:
             break
         prompt = (d / "prompt.txt").read_text(encoding="utf-8")
         started = now_utc()
-        proc, problem, seconds = ask_one(exe, cmd, stdin_of(prompt))
-        session["calls"] += 1
-        fields, why, raw = (None, problem, None) if proc is None else parse(proc.returncode, proc.stdout, proc.stderr)
-        why = problem or why
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            proc, problem, seconds = ask_one(exe, cmd, stdin_of(prompt))
+            session["calls"] += 1
+            fields, why, raw = ((None, problem, None) if proc is None
+                                else parse(proc.returncode, proc.stdout, proc.stderr))
+            why = problem or why
+            if not (why and is_transient(why)) or attempt == MAX_ATTEMPTS:
+                break
+            # A transient CLI/server error: keep its output, ask again as a fresh call.
+            if proc is not None:
+                (d / f"raw_cli_stdout.attempt{attempt}.txt").write_text(proc.stdout, encoding="utf-8")
+            print(f"  {cell}: attempt {attempt} hit a transient error, retrying: {why[:160]}", flush=True)
         if proc is not None:
             (d / "raw_cli_stdout.txt").write_text(proc.stdout, encoding="utf-8")
             if proc.stderr:
@@ -310,7 +327,7 @@ def run(run_dir: Path) -> int:
                "cli_version": version, "date_utc": started, "finish_reason": fields["finish"],
                "completion_tokens": fields["output_tokens"], "prompt_tokens": fields["input_tokens"],
                "cost_usd": 0.0, "cli_reported_cost_usd": fields["reported_cost_usd"],
-               "seconds": round(seconds, 2), "num_turns": fields["num_turns"], "attempts": 1, "provider": provider}
+               "seconds": round(seconds, 2), "num_turns": fields["num_turns"], "attempts": attempt, "provider": provider}
         for k in ("thinking_tokens", "tool_calls_denied", "tool_calls_ran"):
             if k in fields:
                 api[k] = fields[k]

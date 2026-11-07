@@ -729,3 +729,12 @@ Antigravity CLI (agy 1.4.12, already installed and signed in).
 - agy saves conversations under ~/.gemini/antigravity-cli (no flag to disable).
 - agy starts a background auto-updater (`agy --bg-updater`): the CLI version may
   change between calls; each api.json records the version used.
+- (later, same day) First Gemini pilot call ended `status: ERROR` "The stream
+  was interrupted. Please continue the task you were working on." (agy had
+  auto-updated to 1.5.3). The run stopped as designed, ungraded. Added: a
+  transient CLI error (interrupted stream, overloaded, UNAVAILABLE, 5xx,
+  internal error, connection reset) is retried as a fresh call, up to 3
+  attempts per cell (as the OpenRouter runner retries transport errors). Usage
+  limits, tool runs, timeouts and auth errors still stop at once; an answer the
+  CLI marked ERROR is never graded; failed attempts are kept as
+  raw_cli_stdout.attemptN.txt and api.json records `attempts`.
