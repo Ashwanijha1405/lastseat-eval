@@ -20,7 +20,7 @@ help:
 	@echo "make summary RUN=<run_id> [REGRADE=1]   write results/<run_id>/summary.md (REGRADE: re-grade from disk, no API)"
 	@echo "make dry-run  whole pipeline with a mock model that returns the references (\$$0)"
 	@echo "make pilot    1 trial per model and task; prints the estimate; add YES=1 to start"
-	@echo "make run      5 trials; options: CONFIG=free|paid (default free) YES=1 NEW=1 RUN=<id> FROM=<pilot id> JOBS=<n>"
+	@echo "make run      5 trials (TRIALS=n to change); options: CONFIG=free|paid (default free) YES=1 NEW=1 RUN=<id> FROM=<pilot id> JOBS=<n>"
 	@echo "             resumes only an unfinished run with the same tasks, models, trials; else refuses: RUN=<id> or NEW=1"
 	@echo "make psql   open psql on the db container"
 	@echo "make shell  bash inside the eval container"
@@ -59,7 +59,7 @@ pilot: up
 	$(EVAL) python -m lastseat.runner run --trials 1 $(RUN_ARGS)
 
 run: up
-	$(EVAL) python -m lastseat.runner run --trials 5 $(RUN_ARGS)
+	$(EVAL) python -m lastseat.runner run --trials $(or $(TRIALS),5) $(RUN_ARGS)
 
 psql: up
 	$(COMPOSE) exec db psql -U lastseat -d lastseat

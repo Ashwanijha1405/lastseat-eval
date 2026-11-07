@@ -759,3 +759,23 @@ Claude drafted:
 Review: the alias tracking (import forms covered in the test parametrization;
 names rebound later are not tracked); whether the warning should cover other
 psycopg modules (only `errors` for now, as asked).
+
+## 2026-11-07: final runs, README draft, report generator
+
+Claude drafted:
+- Final runs (results/final-*): Opus, Sonnet, Gemini, Nemotron, Haiku (Cohere
+  scheduled after the 00:00 UTC quota reset). Gemini t04 trial_2 was asked twice
+  (first call ran agy's built-in search_web, which no documented rule denies;
+  never graded; re-asked with unchanged settings on the human's decision).
+- `lastseat/report.py`: builds README sections 4 (runtime/cost), 5 (models,
+  results incl. pass^3), 6 (validation) and 7 (failure list) from results/, between
+  `<!-- BEGIN/END report:NAME -->` markers; `python -m lastseat.report --write`.
+  No result is typed by hand. tests/test_report.py.
+- README.md structure and prose for sections 1, 3, 4, 5 (limitations), 6, 9, 10.
+  Sections 2, 7 (analysis), 8, the key finding and the AI-use reflection are
+  TODO-HUMAN blocks.
+- `make run TRIALS=n` (Makefile parity with run.ps1 -Trials).
+
+Review: every claim in README prose against SPEC/results; the citations in
+section 9 (CONCUR, REFUTE, TestCase-Eval are marked to verify: Claude was not
+sure of authors/years/links); whether the limitations list is complete.
