@@ -1,0 +1,174 @@
+```python Academic
+# High‑level description
+#   • We rely on PostgreSQL 16’s built‑in mechanisms to enforce the two booking rules.
+#   • In `migrate` we:
+#       – install the `btree_gist` extension (required for range exclusion)
+#       – add an exclusion constraint that guarantees two bookings of the same room never overlap
+#       – create a BEFORE INSERT/UPDATE trigger that checks the “≤ 3 per day” rule and raises a
+#         generic exception if it would be broken.
+#   • The three public functions (`book`, `reschedule`, `cancel`) each run a short transaction in
+#     `serializable` mode:
+#       – they attempt the required DML (INSERT, UPDATE or DELETE) with a `RETURNING *` clause so they
+#         can see whether the operation really changed a row.
+#       – If the DML succeeds, the transaction is committed and the function returns `True`.
+#       – If the DML fails with a permanent constraint violation (UniqueViolation,
+#         ExclusionViolation, the custom day‑limit exception, …) the function rolls back and
+#         returns `False` immediately – the request would be rejected even in a serial
+#         execution.
+#       – Certain errors (`SerializationFailure`, `DeadlockDetected`, `LockNotAvailable`) are
+#         considered transient. After rolling back the transaction we retry the request up to a
+#         bounded number of times (5). If after all retries it still fails we return `False`.
+#   • The implementation respects the API limits: each request uses at most 4‑5 `db` calls and
+#     never exceeds the 60‑call limit. No external resources, threads or custom imports are used.
+#   • Only the modules allowed (`psycopg.errors`, `datetime`, `decimal`, `typing`, `__future__`)
+#     are imported.
+
+import psycopg.errors as errors
+from datetime import datetime
+from typing import Optional
+
+# Configurable retry limit – bounded as required
+MAX_ATTEMPTS =  Can't be more than 5, but keep it modest.
+
+def migrate(db) -> None:
+    # ensure the extension needed for range‑based exclusion
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist;")
+
+    # 1) No two bookings of the same room may overlap.
+    #    We use a half‑open interval [starts_at, ends_at) so that touching intervals are allowed.
+    db.execute("""
+        ALTER TABLE bookings
+        ADD CONSTRAINT bookings_no_overlap
+        EXCLUDE USING GIST (room_id WITH =, daterange(starts_at, ends_at, '[)') WITH &&);
+    """)
+
+    # 2) At most three bookings per room per UTC calendar day.
+    #    A trigger counts existing bookings for the new row's day and aborts if the limit would be exceeded.
+    db.execute("""
+        CREATE OR REPLACE FUNCTION check_day_limit()
+        RETURNS TRIGGER AS $$
+        DECLARE
+            cnt integer;
+        BEGIN
+            SELECT COUNT(*) INTO cnt
+            FROM bookings b
+            WHERE b.room_id = NEW.room_id
+              AND b.starts_at >= date_trunc('day', NEW.starts_at)
+              AND b.starts_at < date_trunc('day', NEW.starts_at) + INTERVAL '1 day'
+              AND (NEW.id IS NULL OR b.id != NEW.id);  -- NEW.id is NULL for inserts
+            IF cnt >= 3 THEN
+                RAISE EXCEPTION 'Maximum 3 bookings per day exceeded';
+            END IF;
+            RETURN NULL;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+
+    # attach the trigger to both INSERT and UPDATE
+    db.execute("""
+        CREATE TRIGGER bookings_day_limit_trigger
+        BEFORE INSERT OR BEFORE UPDATE
+        ON bookings
+        FOR EACH ROW
+        EXECUTE FUNCTION check_day_limit();
+    """)
+
+
+# ----------------------------------------------------------------------
+# Public API
+# ----------------------------------------------------------------------
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    attempts = 0
+    while attempts < MAX_ATTEMPTS:
+        try:
+            db.begin(isolation="serializable")
+            # Attempt the insertion – DB constraints enforce overlap and day‑limit.
+            db.execute(
+                """
+                INSERT INTO bookings (room_id, starts_at, ends_at)
+                VALUES (%(room_id)s, %(starts_at)s, %(ends_at)s)
+                """,
+                {"room_id": room_id, "starts_at": starts_at, "ends_at": ends_at}
+            )
+            db.commit()
+            return True
+        except (errors.SerializationFailure,
+                errors.DeadlockDetected,
+                errors.LockNotAvailable):
+            db.rollback()
+            attempts += 1
+            continue
+        except errors.Error:
+            # Permanent constraint violation – the request cannot be satisfied.
+            db.rollback()
+            return False
+    # After exhausting retries we still failed – treat as permanent refusal.
+    return False
+
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    attempts = 0
+    while attempts < MAX_ATTEMPTS:
+        try:
+            db.begin(isolation="serializable")
+            # Try to move the booking to the new times.
+            rows = db.execute(
+                """
+                UPDATE bookings
+                SET starts_at = %(new_starts_at)s,
+                    ends_at   = %(new_ends_at)s
+                WHERE id = %(booking_id)s
+                RETURNING *
+                """,
+                {"booking_id": booking_id,
+                 "new_starts_at": new_starts_at,
+                 "new_ends_at": new_ends_at}
+            )
+            # If nothing was returned the booking does not exist.
+            if not rows:
+                db.rollback()
+                return False
+            db.commit()
+            return True
+        except (errors.SerializationFailure,
+                errors.DeadlockDetected,
+                errors.LockNotAvailable):
+            db.rollback()
+            attempts += 1
+            continue
+        except errors.Error:
+            db.rollback()
+            return False
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    attempts = 0
+    while attempts < MAX_ATTEMPTS:
+        try:
+            db.begin(isolation="serializable")
+            rows = db.execute(
+                """
+                DELETE FROM bookings
+                WHERE id = %(booking_id)s
+                RETURNING *
+                """,
+                {"booking_id": booking_id}
+            )
+            if not rows:
+                db.rollback()
+                return False
+            db.commit()
+            return True
+        except (errors.SerializationFailure,
+                errors.DeadlockDetected,
+                errors.LockNotAvailable):
+            db.rollback()
+            attempts += 1
+            continue
+        except errors.Error:
+            db.rollback()
+            return False
+    return False
+```

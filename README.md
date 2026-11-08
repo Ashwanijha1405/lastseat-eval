@@ -66,17 +66,18 @@ The official-CLI route is wired in `run.ps1` only. On Linux/macOS run its three 
 **Runtime and cost** of the final runs (from `results/`):
 
 <!-- BEGIN report:runtime -->
-| model | new calls in the final run (reused pilot trials excluded) | model time per answer (median s) | grading time (total s) | schedules explored | scenarios not exhaustive | spent (USD) |
+| model | new calls in the final run (reused pilot trials excluded) | model time per answer (median s) | grading time (total s)¹ | schedules explored | scenarios not exhaustive | spent (USD) |
 |---|---|---|---|---|---|---|
-| `claude-opus-5-5` | 15 | 18 | 1713 | 40436 | 5 of 144 | 0.00 |
-| `claude-sonnet-5-5` | 30 | 12 | 2096 | 49127 | 7 of 144 | 0.00 |
-| `claude-haiku-5-5` | 30 | 25 | 1549 | 36530 | 4 of 144 | 0.00 |
-| `gemini-3.8-flash-high` | 19 | 335 | 739 | 17570 | 0 of 132 | 0.00 |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 30 | 119 | 2373 | 49834 | 14 of 109 | 0.00 |
+| `claude-opus-5-5` | 15 | 18 | 1258 | 40436 | 5 of 144 | 0.00 |
+| `claude-sonnet-5-5` | 30 | 12 | 1458 | 49127 | 7 of 144 | 0.00 |
+| `claude-haiku-5-5` | 30 | 25 | 1279 | 36530 | 4 of 144 | 0.00 |
+| `gemini-3.8-flash-high` | 19 | 335 | 576 | 17570 | 0 of 132 | 0.00 |
+| `cohere/north-mini-code:free` | 30 | 104 | 413 | 11201 | 0 of 73 | 0.00 |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 30 | 119 | 1812 | 49834 | 14 of 109 | 0.00 |
 
-Grading times are from the latest re-grade from disk (every run, 4 grading jobs at a time on one machine), so they include contention between jobs; schedules and scores do not depend on timing.
+Grader validation (`make validate`, 53 solutions): 21 min of grading time¹ on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11).
 
-Grader validation (`make validate`, 53 solutions): 30 min of grading time on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11).
+¹ Times of the first grade, run one solution at a time (each run's grading right after its model calls; validation with `make validate`). This is the estimate for a reproduction. Every run was later re-graded from disk with 4 grading jobs in parallel, which is slower per solution because the jobs compete for the machine: `claude-opus-5-5` 1713 s, `claude-sonnet-5-5` 2096 s, `claude-haiku-5-5` 1549 s, `gemini-3.8-flash-high` 739 s, `nvidia/nemotron-3-ultra-550b-a55b:free` 2373 s, validation 30 min. Schedules and scores were identical; they do not depend on timing.
 <!-- END report:runtime -->
 
 ## 5. Models tested
@@ -88,6 +89,7 @@ Grader validation (`make validate`, 53 solutions): 30 min of grading time on the
 | `claude-sonnet-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | 2026-11-07 | 30/30 | [`final-claude-sonnet-5-5-cli`](results/final-claude-sonnet-5-5-cli/summary.md) |
 | `claude-haiku-5-5` | Claude Code `claude -p` 2.1.319, claude.ai Pro login | effort `high`, no tools (`--tools ''`), CLI system prompt included | 3 per task | 2026-11-07 | 30/30 | [`final-claude-haiku-5-5-cli`](results/final-claude-haiku-5-5-cli/summary.md) |
 | `gemini-3.8-flash-high` | Antigravity CLI `agy --print` 1.5.3, Google sign-in | `-high` variant chosen by model id, every tool action denied, CLI system prompt included | 3 per task | 2026-11-07 | 30/30 (12 reused from pilots) | [`final-gemini-3.8-flash-high-cli`](results/final-gemini-3.8-flash-high-cli/summary.md) |
+| `cohere/north-mini-code:free` | OpenRouter free tier (served by Cohere) | reasoning effort `high`, max_tokens 32000, max_price 0 | 3 per task | 2026-11-08 | 30/30 | [`final-free-north-mini-code`](results/final-free-north-mini-code/summary.md) |
 | `nvidia/nemotron-3-ultra-550b-a55b:free` | OpenRouter free tier (served by Nvidia) | reasoning effort `high`, max_tokens 32000, max_price 0 | 3 per task | 2026-11-07 | 30/30 | [`final-free-nemotron-3-ultra`](results/final-free-nemotron-3-ultra/summary.md) |
 <!-- END report:models -->
 
@@ -96,22 +98,22 @@ All final runs use the same frozen tasks t01–t10, the same prompt (contract + 
 **Results** (trials passed out of 3 per task; ✅ = pass^3, all three trials passed):
 
 <!-- BEGIN report:results -->
-| task | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-5-5` | `gemini-3.8-flash-high` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
-|---|---|---|---|---|---|
-| t01_flash_sale | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
-| t02_on_call | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
-| t03_expense_budget | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
-| t04_room_booking | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 0/3 ❌ |
-| t05_wallet_transfer | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
-| t06_idempotent_payment | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ |
-| t07_node_drain | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 1/3 ❌ |
-| t08_expense_endpoints | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
-| t09_room_rules | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 3/3 ✅ | 1/3 ❌ |
-| t10_room_rules_scaled | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 1/3 ❌ |
-| **trials passed** | 30/30 | 30/30 | 29/30 | 29/30 | 20/30 |
-| **mean score** | 1.000 | 1.000 | 0.983 | 0.967 | 0.700 |
-| **tasks with pass^3** | 10/10 | 10/10 | 9/10 | 9/10 | 5/10 |
-| **latent_api_error warnings** | 0 | 0 | 0 | 4 | 0 |
+| task | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-5-5` | `gemini-3.8-flash-high` | `cohere/north-mini-code:free` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
+|---|---|---|---|---|---|---|
+| t01_flash_sale | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 3/3 ✅ |
+| t02_on_call | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 3/3 ✅ |
+| t03_expense_budget | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 0/3 ❌ | 3/3 ✅ |
+| t04_room_booking | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 0/3 ❌ |
+| t05_wallet_transfer | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t06_idempotent_payment | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 1/3 ❌ | 2/3 ❌ |
+| t07_node_drain | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 1/3 ❌ | 1/3 ❌ |
+| t08_expense_endpoints | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ |
+| t09_room_rules | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 3/3 ✅ | 0/3 ❌ | 1/3 ❌ |
+| t10_room_rules_scaled | 3/3 ✅ | 3/3 ✅ | 3/3 ✅ | 2/3 ❌ | 0/3 ❌ | 1/3 ❌ |
+| **trials passed** | 30/30 | 30/30 | 29/30 | 29/30 | 14/30 | 20/30 |
+| **mean score** | 1.000 | 1.000 | 0.983 | 0.967 | 0.575 | 0.700 |
+| **tasks with pass^3** | 10/10 | 10/10 | 9/10 | 9/10 | 2/10 | 5/10 |
+| **latent_api_error warnings** | 0 | 0 | 0 | 4 | 0 | 0 |
 <!-- END report:results -->
 
 Per-trial scores, failure details and API records: each run's `summary.md` (linked above). `latent_api_error` is a static warning that never changes a score: the solution references a `psycopg.errors` name the pinned psycopg does not define, which crashes only if that line ever runs.
@@ -201,6 +203,22 @@ Every failed final-run trial, with its category and files:
 <!-- BEGIN report:failures -->
 - `claude-haiku-5-5` · t09_room_rules · trial_1: **spec** — [verdict](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/verdict.json), [counterexample 1](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_1.txt), [counterexample 2](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_2.txt), [counterexample 3](results/final-claude-haiku-5-5-cli/claude-haiku-5-5/t09_room_rules/trial_1/counterexample_3.txt)
 - `gemini-3.8-flash-high` · t10_room_rules_scaled · trial_2: **load** (exec_error): `AttributeError: module 'psycopg.errors' has no attribute 'TransactionRollbackError'` — [verdict](results/final-gemini-3.8-flash-high-cli/gemini-3.8-flash-high/t10_room_rules_scaled/trial_2/verdict.json)
+- `cohere/north-mini-code:free` · t01_flash_sale · trial_1: **concurrency** — [verdict](results/final-free-north-mini-code/north-mini-code/t01_flash_sale/trial_1/verdict.json), [counterexample 1](results/final-free-north-mini-code/north-mini-code/t01_flash_sale/trial_1/counterexample_1.txt), [counterexample 2](results/final-free-north-mini-code/north-mini-code/t01_flash_sale/trial_1/counterexample_2.txt)
+- `cohere/north-mini-code:free` · t02_on_call · trial_2: **concurrency** — [verdict](results/final-free-north-mini-code/north-mini-code/t02_on_call/trial_2/verdict.json), [counterexample 1](results/final-free-north-mini-code/north-mini-code/t02_on_call/trial_2/counterexample_1.txt), [counterexample 2](results/final-free-north-mini-code/north-mini-code/t02_on_call/trial_2/counterexample_2.txt), [counterexample 3](results/final-free-north-mini-code/north-mini-code/t02_on_call/trial_2/counterexample_3.txt)
+- `cohere/north-mini-code:free` · t03_expense_budget · trial_1: **load** (syntax_error): `line 65: '[' was never closed` — [verdict](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_1/verdict.json)
+- `cohere/north-mini-code:free` · t03_expense_budget · trial_2: **concurrency** — [verdict](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_2/verdict.json), [counterexample 1](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_2/counterexample_1.txt), [counterexample 2](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_2/counterexample_2.txt)
+- `cohere/north-mini-code:free` · t03_expense_budget · trial_3: **concurrency** — [verdict](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_3/verdict.json), [counterexample 1](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_3/counterexample_1.txt), [counterexample 2](results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_3/counterexample_2.txt)
+- `cohere/north-mini-code:free` · t04_room_booking · trial_1: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-north-mini-code/north-mini-code/t04_room_booking/trial_1/verdict.json)
+- `cohere/north-mini-code:free` · t06_idempotent_payment · trial_2: **load** (syntax_error): `line 9: expected ':'` — [verdict](results/final-free-north-mini-code/north-mini-code/t06_idempotent_payment/trial_2/verdict.json)
+- `cohere/north-mini-code:free` · t06_idempotent_payment · trial_3: **load** (migrate_error): `ActiveSqlTransaction: CREATE INDEX CONCURRENTLY cannot run inside a transaction block` — [verdict](results/final-free-north-mini-code/north-mini-code/t06_idempotent_payment/trial_3/verdict.json)
+- `cohere/north-mini-code:free` · t07_node_drain · trial_1: **load** (exec_error): `SyntaxError: from __future__ imports must occur at the beginning of the file (solution.py, line 3)` — [verdict](results/final-free-north-mini-code/north-mini-code/t07_node_drain/trial_1/verdict.json)
+- `cohere/north-mini-code:free` · t07_node_drain · trial_2: **load** (no_code) — [verdict](results/final-free-north-mini-code/north-mini-code/t07_node_drain/trial_2/verdict.json)
+- `cohere/north-mini-code:free` · t09_room_rules · trial_1: **load** (no_code) — [verdict](results/final-free-north-mini-code/north-mini-code/t09_room_rules/trial_1/verdict.json)
+- `cohere/north-mini-code:free` · t09_room_rules · trial_2: **load** (no_code) — [verdict](results/final-free-north-mini-code/north-mini-code/t09_room_rules/trial_2/verdict.json)
+- `cohere/north-mini-code:free` · t09_room_rules · trial_3: **spec** — [verdict](results/final-free-north-mini-code/north-mini-code/t09_room_rules/trial_3/verdict.json), [counterexample 1](results/final-free-north-mini-code/north-mini-code/t09_room_rules/trial_3/counterexample_1.txt)
+- `cohere/north-mini-code:free` · t10_room_rules_scaled · trial_1: **load** (migrate_error): `SyntaxError: syntax error at or near "EXCLUSION"` — [verdict](results/final-free-north-mini-code/north-mini-code/t10_room_rules_scaled/trial_1/verdict.json)
+- `cohere/north-mini-code:free` · t10_room_rules_scaled · trial_2: **load** (migrate_error): `SyntaxError: syntax error at or near ")"` — [verdict](results/final-free-north-mini-code/north-mini-code/t10_room_rules_scaled/trial_2/verdict.json)
+- `cohere/north-mini-code:free` · t10_room_rules_scaled · trial_3: **load** (no_code) — [verdict](results/final-free-north-mini-code/north-mini-code/t10_room_rules_scaled/trial_3/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t04_room_booking · trial_1: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_1/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t04_room_booking · trial_2: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_2/verdict.json)
 - `nvidia/nemotron-3-ultra-550b-a55b:free` · t04_room_booking · trial_3: **load** (migrate_error): `UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` — [verdict](results/final-free-nemotron-3-ultra/nemotron-3-ultra/t04_room_booking/trial_3/verdict.json)

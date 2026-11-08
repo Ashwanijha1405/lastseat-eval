@@ -1,0 +1,19 @@
+scenario: one already approved, two approvals that do not both fit
+R1: approve_expense(db, expense_id=2)
+R2: approve_expense(db, expense_id=3)
+schedule choices: [0, 0, 0, 0, 1, 1]
+step 1   R1  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 2   R1  SELECT e.status, e.department_id, d.budget, e.amount FROM expenses e JOIN departments d ON e.department_id = d.id WHERE e.id = 2 FOR UPDATE -> [('pending', 1, 100, 40)]
+step 3   R1  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(30,)]
+step 4   R1  UPDATE expenses SET status = 'approved' WHERE id = 2 -> UPDATE 1
+step 5   R2  BEGIN ISOLATION LEVEL REPEATABLE READ -> BEGIN
+step 6   R2  SELECT e.status, e.department_id, d.budget, e.amount FROM expenses e JOIN departments d ON e.department_id = d.id WHERE e.id = 3 FOR UPDATE -> blocked (waiting for R1)
+step 7   R1  COMMIT -> COMMIT
+         R1  returned True
+         R2  step 6 resumed -> [('pending', 1, 100, 50)]
+step 8   R2  SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE department_id = 1 AND status = 'approved' -> [(30,)]
+step 9   R2  UPDATE expenses SET status = 'approved' WHERE id = 3 -> UPDATE 1
+step 10  R2  COMMIT -> COMMIT
+         R2  returned True
+INVARIANT VIOLATED: no department's approved total exceeds its budget  (got [(False,)])
+reproduced on re-run: True

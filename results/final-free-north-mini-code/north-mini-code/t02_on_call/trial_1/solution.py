@@ -1,0 +1,68 @@
+import psycopg.errors
+
+def migrate(db) -> None:
+    # Create a simple mutex table: one row per shift.
+    db.execute("CREATE TABLE shift_locks (shift_id int PRIMARY KEY)")
+    # Populate it with the existing shifts.
+    db.execute("INSERT INTO shift_locks (shift_id) SELECT DISTINCT shift_id FROM doctors")
+
+def go_off_call(db, doctor_id: int) -> bool:
+    max_attempts = 5
+    for _ in range(max_attempts):
+        try:
+            db.begin()
+
+            # 1. Determine the shift of the requesting doctor.
+            rows = db.execute(
+                "SELECT shift_id FROM doctors WHERE id = %(doctor_id)s AND on_call = true",
+                {"doctor_id": doctor_id}
+            )
+            if not rows:                     # Should never happen (doctor is on call).
+                db.rollback()
+                return False
+            shift_id = rows[0][0]
+
+            # 2. Acquire an exclusive lock for this shift – this serialises all
+            #    concurrent requests that belong to the same shift.
+            db.execute(
+                "SELECT 1 FROM shift_locks WHERE shift_id = %(sid)s FOR UPDATE",
+                {"sid": shift_id}
+            )
+
+            # 3. Count how many doctors are currently on call in this shift.
+            on_call_docs = db.execute(
+                "SELECT * FROM doctors WHERE shift_id = %(sid)s AND on_call = true",
+                {"sid": shift_id}
+            )
+
+            if len(on_call_docs) > 1:
+                # There is at least one other on‑call doctor → turn this one off.
+                updated = db.execute(
+                    "UPDATE doctors "
+                    "SET on_call = false "
+                    "WHERE id = %(doctor_id)s AND shift_id = %(sid)s AND on_call = true "
+                    "RETURNING id",
+                    {"doctor_id": doctor_id, "sid": shift_id}
+                )
+                if updated:
+                    db.commit()
+                    return True
+                else:
+                    db.rollback()
+                    return False
+            else:
+                # No other on‑call doctor → this doctor is the only one.
+                db.rollback()
+                return False
+
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except psycopg.errors.SerializationFailure:
+            db.rollback()
+            continue
+
+    # If we ever exhaust the retry limit (should not happen under normal load),
+    # roll back and report failure.
+    db.rollback()
+    return False

@@ -1,0 +1,106 @@
+{
+  "run_id": "final-free-north-mini-code",
+  "signature": {
+    "config": "config/models.free.yaml",
+    "models": [
+      "cohere/north-mini-code:free"
+    ],
+    "tasks": [
+      "t01_flash_sale",
+      "t02_on_call",
+      "t03_expense_budget",
+      "t04_room_booking",
+      "t05_wallet_transfer",
+      "t06_idempotent_payment",
+      "t07_node_drain",
+      "t08_expense_endpoints",
+      "t09_room_rules",
+      "t10_room_rules_scaled"
+    ],
+    "trials": 3,
+    "dry_run": false
+  },
+  "started_utc": "2026-11-08T05:00:20+00:00",
+  "git_commit": "91aa2df6b975b43e009c6f5fc31740cb02adddc3",
+  "dry_run": false,
+  "trials": 3,
+  "config": "config/models.free.yaml",
+  "tier": "free",
+  "limits": {
+    "min_interval_s": 4,
+    "daily_requests": 50,
+    "max_attempts": 4
+  },
+  "tasks": [
+    "t01_flash_sale",
+    "t02_on_call",
+    "t03_expense_budget",
+    "t04_room_booking",
+    "t05_wallet_transfer",
+    "t06_idempotent_payment",
+    "t07_node_drain",
+    "t08_expense_endpoints",
+    "t09_room_rules",
+    "t10_room_rules_scaled"
+  ],
+  "models": [
+    {
+      "slug": "north-mini-code",
+      "id": "cohere/north-mini-code:free"
+    }
+  ],
+  "settings_sent": {
+    "max_tokens": 32000,
+    "reasoning": {
+      "effort": "high"
+    },
+    "provider": {
+      "max_price": {
+        "prompt": 0,
+        "completion": 0,
+        "request": 0,
+        "image": 0
+      }
+    }
+  },
+  "list_prices_usd_per_token": {
+    "cohere/north-mini-code:free": [
+      0.0,
+      0.0
+    ]
+  },
+  "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "scheduler_caps": {
+    "max_schedules": 2000,
+    "random_schedules": 200,
+    "random_seed": 0,
+    "step_limit": 60,
+    "schedule_timeout_s": 15.0
+  },
+  "grading_jobs": 1,
+  "budget_limit_usd": 0.0,
+  "complete": true,
+  "sessions": [
+    {
+      "started_utc": "2026-11-08T05:00:20+00:00",
+      "git_commit": "00a911fff49ac84ef7cc6074521c5ff3626820fd",
+      "api_calls": 28,
+      "stopped_reason": "transport at north-mini-code/t09_room_rules/trial_3: IncompleteRead: IncompleteRead(693 bytes read)",
+      "api_failures": [
+        "north-mini-code/t09_room_rules/trial_3: transport: IncompleteRead: IncompleteRead(693 bytes read)"
+      ],
+      "finished_utc": "2026-11-08T06:02:13+00:00"
+    },
+    {
+      "started_utc": "2026-11-08T07:18:59+00:00",
+      "git_commit": "91aa2df6b975b43e009c6f5fc31740cb02adddc3",
+      "api_calls": 2,
+      "stopped_reason": null,
+      "api_failures": [],
+      "finished_utc": "2026-11-08T07:22:31+00:00"
+    }
+  ],
+  "spent_usd": 0.0,
+  "api_calls": 30,
+  "stopped_reason": null
+}

@@ -1,0 +1,34 @@
+from datetime import datetime
+import psycopg.errors
+
+def migrate(db):
+    db.begin()
+    try:
+        db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+        db.execute("""ALTER TABLE bookings
+            ADD CONSTRAINT bookings_room_exclude
+            EXCLUDE USING GIST (room_id WITH =,
+                                 tstzrange(starts_at, ends_at) WITH &&)""")
+        db.commit()
+    except:
+        db.rollback()
+        raise
+
+def book_room(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    max_attempts = 5
+    for _ in range(max_attempts):
+        db.begin(isolation="read committed")
+        try:
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at)
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.ExclusionViolation, psycopg.errors.UniqueViolation):
+            db.rollback()
+            return False
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+    return False

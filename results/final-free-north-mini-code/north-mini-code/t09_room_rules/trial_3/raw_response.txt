@@ -1,0 +1,113 @@
+```python
+import datetime
+import psycopg
+from psycopg import errors
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    day_date = starts_at.date()
+    max_attempts = 2  # allow one retry in case of transient error
+    for _ in range(max_attempts):
+        try:
+            db.begin(isolation="serializable")
+            # lock all bookings of the room to prevent concurrent modifications
+            rows = db.execute(
+                "SELECT id, starts_at, ends_at FROM bookings WHERE room_id = %s FOR UPDATE",
+                (room_id,)
+            )
+            overlapping = False
+            day_count = 0
+            for row in rows:
+                b_id, b_starts, b_ends = row
+                # half‑open overlap test: [b_starts, b_ends) and [starts_at, ends_at)
+                if b_starts < ends_at and b_ends > starts_at:
+                    overlapping = True
+                if b_starts.date() == day_date:
+                    day_count += 1
+            if overlapping or day_count >= 3:
+                db.rollback()
+                return False
+            # no conflict – insert the new booking
+            db.execute(
+                "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)",
+                (room_id, starts_at, ends_at)
+            )
+            db.commit()
+            return True
+        except errors.Error:
+            # transient failure – rollback and retry
+            db.rollback()
+            continue
+    # all attempts failed
+    return False
+
+def reschedule(db, booking_id: int, new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    new_day = new_starts_at.date()
+    max_attempts = 2
+    for _ in range(max_attempts):
+        try:
+            db.begin(isolation="serializable")
+            # lock all bookings of the room that contains the booking to be updated
+            rows = db.execute(
+                "SELECT id, starts_at, ends_at FROM bookings "
+                "WHERE room_id = (SELECT room_id FROM bookings WHERE id = %s) FOR UPDATE",
+                (booking_id,)
+            )
+            # locate the booking to reschedule
+            target = None
+            for row in rows:
+                b_id, b_starts, b_ends = row
+                if b_id == booking_id:
+                    target = row
+                    break
+            if target is None:
+                db.rollback()
+                return False
+            overlapping = False
+            day_count = 0
+            for row in rows:
+                b_id, b_starts, b_ends = row
+                if b_id == booking_id:
+                    continue
+                # overlap test against the new interval
+                if b_starts < new_ends_at and b_ends > new_starts_at:
+                    overlapping = True
+                if b_starts.date() == new_day:
+                    day_count += 1
+            if overlapping or day_count >= 3:
+                db.rollback()
+                return False
+            # apply the rescheduling
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id)
+            )
+            db.commit()
+            return True
+        except errors.Error:
+            db.rollback()
+            continue
+    return False
+
+def cancel(db, booking_id: int) -> bool:
+    max_attempts = 2
+    for _ in range(max_attempts):
+        try:
+            db.begin(isolation="serializable")
+            # lock all bookings of the room to prevent a concurrent insertion while we delete
+            rows = db.execute(
+                "SELECT id FROM bookings "
+                "WHERE room_id = (SELECT room_id FROM bookings WHERE id = %s) FOR UPDATE",
+                (booking_id,)
+            )
+            # check existence of the booking to cancel
+            if not any(row[0] == booking_id for row in rows):
+                db.rollback()
+                return False
+            db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            db.commit()
+            return True
+        except errors.Error:
+            db.rollback()
+            continue
+    return False
+```

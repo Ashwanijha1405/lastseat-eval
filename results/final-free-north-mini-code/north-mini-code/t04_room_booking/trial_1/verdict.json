@@ -1,0 +1,34 @@
+{
+  "task_id": "t04_room_booking",
+  "solution": "/app/results/final-free-north-mini-code/north-mini-code/t04_room_booking/trial_1/solution.py",
+  "status": "load_error",
+  "load_error": "migrate_error",
+  "load_detail": "UndefinedFunction: function tsrange(timestamp with time zone, timestamp with time zone) does not exist\nLINE 4:     EXCLUDE USING GIST (room_id WITH =, tsrange(starts_at, e...\n                                                ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.07,
+  "warnings": [],
+  "failure_category": "load",
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "stop",
+    "prompt_tokens": 1164,
+    "completion_tokens": 10054,
+    "cost_usd": 0.0,
+    "seconds": 81.98,
+    "attempts": 1
+  }
+}

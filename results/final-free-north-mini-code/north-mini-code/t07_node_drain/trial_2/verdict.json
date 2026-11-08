@@ -1,0 +1,24 @@
+{
+  "task_id": "t07_node_drain",
+  "status": "load_error",
+  "load_error": "no_code",
+  "failure_category": "load",
+  "passed": false,
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "length",
+    "prompt_tokens": 1125,
+    "completion_tokens": 31999,
+    "cost_usd": 0.0,
+    "seconds": 176.57,
+    "attempts": 1
+  }
+}

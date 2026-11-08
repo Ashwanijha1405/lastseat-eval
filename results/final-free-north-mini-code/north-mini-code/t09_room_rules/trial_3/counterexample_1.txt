@@ -1,0 +1,11 @@
+solo check: the day is the UTC day, whatever offset the time is given in
+call: book(db, room_id=1, starts_at=datetime.datetime(2026, 11, 10, 1, 0, tzinfo=datetime.timezone(datetime.timedelta(seconds=19800))), ends_at=datetime.datetime(2026, 11, 10, 2, 0, tzinfo=datetime.timezone(datetime.timedelta(seconds=19800))))
+schedule choices: []
+step 1   R1  BEGIN ISOLATION LEVEL SERIALIZABLE -> BEGIN
+step 2   R1  SELECT id, starts_at, ends_at FROM bookings WHERE room_id = 1 FOR UPDATE -> [(1, datetime.datetime(2026, 11, 9, 9, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC')), datetime.datetime(2026, 11, 9, 10, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC'))), (2, datetime.datetime(2026, 11, 9, 10, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC')), datetime.datetime(2026, 11, 9, 11, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC'))), (3, datetime.datetime(2026, 11, 9, 11, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC')), datetime.datetime(2026, 11, 9, 12, 0, tzinfo=zoneinfo.ZoneInfo(key='Etc/UTC')))]
+step 3   R1  INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (1, '2026-11-10 01:00:00+05:30'::timestamptz, '2026-11-10 02:00:00+05:30'::timestamptz) -> INSERT 0 1
+step 4   R1  COMMIT -> COMMIT
+         R1  returned True
+invariant ok: no two bookings of the same room overlap
+INVARIANT VIOLATED: no room has more than 3 bookings on a UTC day  (got [(False,)])
+INVARIANT VIOLATED: expected state: SELECT count(*) = 3 FROM bookings  (got [(False,)])

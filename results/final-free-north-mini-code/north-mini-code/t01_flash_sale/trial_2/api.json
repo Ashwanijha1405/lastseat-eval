@@ -1,0 +1,11 @@
+{
+  "model_id": "cohere/north-mini-code:free",
+  "served_model": "cohere/north-mini-code:free",
+  "provider": "Cohere",
+  "finish_reason": "stop",
+  "prompt_tokens": 1070,
+  "completion_tokens": 10375,
+  "cost_usd": 0.0,
+  "seconds": 64.36,
+  "attempts": 1
+}

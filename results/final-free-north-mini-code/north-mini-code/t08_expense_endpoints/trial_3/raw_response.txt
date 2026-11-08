@@ -1,0 +1,132 @@
+```python
+import psycopg.errors
+
+MAX_RETRIES = 3
+
+def approve_expense(db, expense_id: int) -> bool:
+    for _ in range(MAX_RETRIES):
+        try:
+            db.begin(isolation='serializable')
+            # read the expense (id is unique)
+            expense = db.execute(
+                "SELECT id, status, department_id, amount FROM expenses WHERE id = %s",
+                (expense_id,)
+            )[0]
+            if expense[1] != 'pending':
+                db.rollback()
+                return False
+            dept_id = expense[2]
+            amount = expense[3]
+
+            # read department budget
+            dept = db.execute(
+                "SELECT budget FROM departments WHERE id = %s",
+                (dept_id,)
+            )[0]
+            budget = dept[0]
+
+            # current approved total for the department
+            total = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,)
+            )[0][0]
+
+            if total + amount > budget:
+                db.rollback()
+                return False
+
+            # approve the expense
+            db.execute(
+                "UPDATE expenses SET status = 'approved' WHERE id = %s",
+                (expense_id,)
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+
+def edit_expense(db, expense_id: int, new_amount: int) -> bool:
+    for _ in range(MAX_RETRIES):
+        try:
+            db.begin(isolation='serializable')
+            expense = db.execute(
+                "SELECT id, status, department_id, amount FROM expenses WHERE id = %s",
+                (expense_id,)
+            )[0]
+            status, dept_id, old_amount = expense[1], expense[2], expense[3]
+
+            if status != 'approved':
+                # pending or rejected – always allowed
+                db.execute(
+                    "UPDATE expenses SET amount = %s WHERE id = %s",
+                    (new_amount, expense_id)
+                )
+                db.commit()
+                return True
+            else:
+                # approved – must respect budget
+                dept = db.execute(
+                    "SELECT budget FROM departments WHERE id = %s",
+                    (dept_id,)
+                )[0]
+                budget = dept[0]
+
+                total = db.execute(
+                    "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                    "WHERE department_id = %s AND status = 'approved'",
+                    (dept_id,)
+                )[0][0]
+
+                if total - old_amount + new_amount > budget:
+                    db.rollback()
+                    return False
+
+                db.execute(
+                    "UPDATE expenses SET amount = %s WHERE id = %s",
+                    (new_amount, expense_id)
+                )
+                db.commit()
+                return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+
+def change_budget(db, dept_id: int, new_budget: int) -> bool:
+    for _ in range(MAX_RETRIES):
+        try:
+            db.begin(isolation='serializable')
+            # read current approved total (budget itself is not needed)
+            total = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM expenses "
+                "WHERE department_id = %s AND status = 'approved'",
+                (dept_id,)
+            )[0][0]
+
+            if total > new_budget:
+                db.rollback()
+                return False
+
+            db.execute(
+                "UPDATE departments SET budget = %s WHERE id = %s",
+                (new_budget, dept_id)
+            )
+            db.commit()
+            return True
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            raise
+    return False
+```

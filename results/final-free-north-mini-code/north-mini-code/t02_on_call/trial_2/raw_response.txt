@@ -1,0 +1,55 @@
+```python
+import typing
+
+def go_off_call(db, doctor_id: int) -> bool:
+    """
+    Attempt to turn the doctor off call. Returns True if the doctor was
+    successfully turned off call (i.e., there was at least one other on-call
+    doctor in the same shift). Otherwise returns False and leaves the
+    doctor's on_call status unchanged.
+    """
+    in_transaction = False
+    try:
+        # Start a serializable transaction to guarantee consistency
+        db.begin(isolation="serializable")
+        in_transaction = True
+
+        # 1. Determine the shift of the doctor
+        shift_rows = db.execute(
+            "SELECT shift_id FROM doctors WHERE id = %(doctor_id)s",
+            {"doctor_id": doctor_id}
+        )
+        # According to the problem the doctor always exists and is on call
+        if not shift_rows:
+            # Defensive: abort if invariant is broken
+            db.rollback()
+            raise ValueError(f"Doctor {doctor_id} not found")
+        shift_id, = shift_rows[0]
+
+        # 2. Lock all currently on‑call doctors in this shift
+        oncall_rows = db.execute(
+            "SELECT * FROM doctors "
+            "WHERE shift_id = %(shift_id)s AND on_call = true "
+            "FOR UPDATE",
+            {"shift_id": shift_id}
+        )
+        # 3. Decide: at least one other doctor on call?
+        if len(oncall_rows) > 1:
+            # Perform the update (this doctor is among the locked rows)
+            db.execute(
+                "UPDATE doctors SET on_call = false WHERE id = %(doctor_id)s",
+                {"doctor_id": doctor_id}
+            )
+            db.commit()
+            return True
+        else:
+            # No other on‑call doctor → do nothing
+            db.commit()
+            return False
+
+    except Exception:
+        # If anything went wrong, roll back the transaction and re‑raise
+        if in_transaction:
+            db.rollback()
+        raise
+```

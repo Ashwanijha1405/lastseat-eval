@@ -1,0 +1,34 @@
+{
+  "task_id": "t03_expense_budget",
+  "solution": "/app/results/final-free-north-mini-code/north-mini-code/t03_expense_budget/trial_1/solution.py",
+  "status": "load_error",
+  "load_error": "syntax_error",
+  "load_detail": "line 65: '[' was never closed",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.0,
+  "warnings": [],
+  "failure_category": "load",
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "stop",
+    "prompt_tokens": 1146,
+    "completion_tokens": 14998,
+    "cost_usd": 0.0,
+    "seconds": 109.08,
+    "attempts": 1
+  }
+}

@@ -1,0 +1,95 @@
+import psycopg
+from psycopg import errors
+from __future__ import annotations
+import datetime
+import decimal
+import typing
+
+def migrate(db) -> None:
+    """Create and populate the shard_locks table used for exclusive per‑shard locking."""
+    db.begin()
+    db.execute("CREATE TABLE shard_locks (shard_id int PRIMARY KEY)")
+    db.execute("INSERT INTO shard_locks SELECT id FROM shards")
+    db.commit()
+
+def drain_node(db, node_id: str) -> bool:
+    """
+    Attempt to drain (deactivate all active replicas of) the given node.
+
+    Returns True if the node can be fully drained (every shard that had an active
+    replica on this node still has at least one active replica elsewhere). Returns
+    False otherwise, leaving the database unchanged.
+    """
+    MAX_ATTEMPTS = 5
+    attempt = 0
+
+    while attempt < MAX_ATTEMPTS:
+        attempt += 1
+        try:
+            # Start a transaction with a repeatable read isolation to avoid
+            # phantom reads while we lock the per‑shard locks.
+            db.begin("repeatable read")
+
+            # 1) Find all shards for which this node currently has an active replica.
+            rows = db.execute(
+                "SELECT shard_id FROM replicas WHERE node_id = %s AND active = true",
+                (node_id,)
+            )
+            shard_ids = [r[0] for r in rows]
+
+            # If the node has no active replicas, nothing to do – success.
+            if not shard_ids:
+                db.commit()
+                return True
+
+            # 2) Acquire exclusive locks on the lock‑table rows for all those shards.
+            #    This guarantees that no other drain can modify any replica of these
+            #    shards while we are in the transaction.
+            db.execute(
+                "SELECT 1 FROM shard_locks WHERE shard_id IN %s FOR UPDATE",
+                (tuple(shard_ids),)
+            )
+
+            # 3) Verify that each shard still has another active replica on a
+            #    different node. The SELECT reads only the replicas table; because
+            #    we hold the lock rows, no other transaction can change those rows
+            #    during our check.
+            other_rows = db.execute(
+                """
+                SELECT DISTINCT r.shard_id
+                FROM replicas r
+                WHERE r.shard_id IN %s
+                  AND r.node_id != %s
+                  AND r.active = true
+                """,
+                (tuple(shard_ids), node_id)
+            )
+            other_shard_ids = {r[0] for r in other_rows}
+
+            if len(other_shard_ids) != len(shard_ids):
+                # Condition violated – abort and return False.
+                db.rollback()
+                return False
+
+            # 4) All checks passed – deactivate the node's replicas for these shards.
+            db.execute(
+                "UPDATE replicas SET active = false "
+                "WHERE node_id = %s AND shard_id IN %s",
+                (node_id, tuple(shard_ids))
+            )
+            db.commit()
+            return True
+
+        except (errors.SerializationFailure, errors.DeadlockDetected):
+            # Concurrency problem – rollback and retry.
+            db.rollback()
+            continue
+
+        except Exception:
+            # Any other error is also fatal for this attempt – rollback and retry.
+            db.rollback()
+            continue
+
+    # If we get here, we exhausted the retry budget. This should not happen
+    # under normal load; we treat it as a failure.
+    return False

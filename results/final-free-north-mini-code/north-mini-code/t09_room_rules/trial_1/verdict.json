@@ -1,0 +1,24 @@
+{
+  "task_id": "t09_room_rules",
+  "status": "load_error",
+  "load_error": "no_code",
+  "failure_category": "load",
+  "passed": false,
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "stop",
+    "prompt_tokens": 1473,
+    "completion_tokens": 22522,
+    "cost_usd": 0.0,
+    "seconds": 143.62,
+    "attempts": 1
+  }
+}

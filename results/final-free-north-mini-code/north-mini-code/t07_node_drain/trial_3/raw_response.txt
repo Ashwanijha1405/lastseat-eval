@@ -1,0 +1,56 @@
+```python
+import psycopg.errors
+
+def drain_node(db, node_id: str) -> bool:
+    # Limit attempts to stay well under the 60-call limit per request.
+    MAX_ATTEMPTS = 14
+
+    for _ in range(MAX_ATTEMPTS):
+        try:
+            # Start a serializable transaction to avoid write‑skew anomalies.
+            db.begin("serializable")
+
+            # Check whether any shard would lose its only active replica.
+            check_sql = """
+                SELECT 1
+                FROM replicas r1
+                WHERE r1.node_id = %(node_id)s
+                  AND r1.active = true
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM replicas r2
+                      WHERE r2.shard_id = r1.shard_id
+                        AND r2.active = true
+                        AND r2.node_id <> r1.node_id
+                  );
+            """
+            if db.execute(check_sql, {"node_id": node_id}):
+                # Condition violated – abort the transaction and refuse the drain.
+                db.rollback()
+                return False
+
+            # All shards have a backup; deactivate all replicas of this node.
+            update_sql = """
+                UPDATE replicas
+                SET active = false
+                WHERE node_id = %(node_id)s;
+            """
+            db.execute(update_sql, {"node_id": node_id})
+            db.commit()
+            return True
+
+        except (psycopg.errors.SerializationFailure,
+                psycopg.errors.DeadlockDetected):
+            # Conflict with another concurrent drain – rollback and retry.
+            db.rollback()
+            continue
+
+        except Exception:
+            # Any other error is unexpected; rollback and propagate.
+            db.rollback()
+            raise
+
+    # Exceeded the retry limit – rollback any lingering transaction and fail.
+    db.rollback()
+    return False
+```

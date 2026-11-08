@@ -1,0 +1,126 @@
+{
+  "task_id": "t05_wallet_transfer",
+  "solution": "/app/results/final-free-north-mini-code/north-mini-code/t05_wallet_transfer/trial_2/solution.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "transfer within balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer within balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(10,)]\nstep 4   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{70,40}' FROM accounts\n"
+    },
+    {
+      "name": "transfer of the whole balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer of the whole balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(30,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = balance - 30 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = balance + 30 WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{0,30}' FROM accounts\n"
+    },
+    {
+      "name": "transfer over balance is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer over balance is refused cleanly\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(29,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(0,)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{29,0}' FROM accounts\n"
+    },
+    {
+      "name": "transfer to a lower id works",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer to a lower id works\ncall: transfer(db, from_id=2, to_id=1, amount=50)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 FOR UPDATE -> [(0,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 FOR UPDATE -> [(50,)]\nstep 4   R1  UPDATE accounts SET balance = balance - 50 WHERE id = 2 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = balance + 50 WHERE id = 1 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{50,0,5}' FROM accounts\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two transfers out of one account, only one fits",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 50,
+      "dfs_schedules": 50,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.45,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
+    },
+    {
+      "name": "opposite transfers between two accounts",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 50,
+      "dfs_schedules": 50,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.42,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
+    },
+    {
+      "name": "two transfers out of one account, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 50,
+      "dfs_schedules": 50,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 1.41,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null,
+      "serial_schedules": 2,
+      "serial_unsafe": 0,
+      "serial_unlive": 0
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 4.52,
+  "warnings": [],
+  "failure_category": null,
+  "api": {
+    "model_id": "cohere/north-mini-code:free",
+    "served_model": "cohere/north-mini-code:free",
+    "provider": "Cohere",
+    "finish_reason": "stop",
+    "prompt_tokens": 1066,
+    "completion_tokens": 15211,
+    "cost_usd": 0.0,
+    "seconds": 150.99,
+    "attempts": 1
+  }
+}

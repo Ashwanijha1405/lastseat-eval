@@ -1,0 +1,205 @@
+```python
+import psycopg.errors
+import datetime
+from typing import Optional
+
+MAX_ATTEMPTS = 3
+
+def migrate(db) -> None:
+    # Create the btree_gist extension if not present
+    db.execute("CREATE EXTENSION IF NOT EXISTS btree_gist;")
+
+    # Add exclusion constraint to prevent overlapping bookings in the same room
+    db.execute("""
+        ALTER TABLE bookings
+        ADD CONSTRAINT no_overlap
+        EXCLUSION USING GIST (
+            room_id WITH =,
+            tstzrange(starts_at, ends_at, '[]') WITH &&
+        );
+    """)
+
+    # Table to keep per‑room per‑day booking counts (max 3)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS room_day_counter (
+            room_id integer NOT NULL,
+            day date NOT NULL,
+            count integer NOT NULL,
+            PRIMARY KEY (room_id, day),
+            CHECK (count <= 3)
+        );
+    """)
+
+    # Initialise the counter from existing bookings
+    db.execute("""
+        INSERT INTO room_day_counter (room_id, day, count)
+        SELECT room_id, DATE(starts_at), COUNT(*)
+        FROM bookings
+        GROUP BY room_id, DATE(starts_at);
+    """)
+
+    # ---------- Triggers for room_day_counter ----------
+    # 1. Increment when a booking is inserted
+    db.execute("""
+        CREATE OR REPLACE FUNCTION inc_day_counter()
+        RETURNS TRIGGER
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            INSERT INTO room_day_counter (room_id, day, count)
+            VALUES (NEW.room_id, NEW.starts_at::date, 1)
+            ON CONFLICT (room_id, day) DO UPDATE
+            SET count = room_day_counter.count + 1;
+            RETURN NEW;
+        END;
+        $$;
+    """)
+    db.execute("""
+        CREATE TRIGGER bookings_inc_day_counter
+        AFTER INSERT ON bookings
+        FOR EACH ROW
+        EXECUTE FUNCTION inc_day_counter();
+    """)
+
+    # 2. Adjust counters when a booking's starts_at changes (reschedule)
+    db.execute("""
+        CREATE OR REPLACE FUNCTION adjust_day_counter()
+        RETURNS TRIGGER
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF NEW.starts_at::date != OLD.starts_at::date THEN
+                -- Decrement old day
+                UPDATE room_day_counter
+                SET count = count - 1
+                WHERE room_id = OLD.room_id AND day = OLD.starts_at::date;
+                -- Increment new day
+                INSERT INTO room_day_counter (room_id, day, count)
+                VALUES (NEW.room_id, NEW.starts_at::date, 1)
+                ON CONFLICT (room_id, day) DO UPDATE
+                SET count = room_day_counter.count + 1;
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+    """)
+    db.execute("""
+        CREATE TRIGGER bookings_adjust_day_counter
+        AFTER UPDATE OF starts_at ON bookings
+        FOR EACH ROW
+        EXECUTE FUNCTION adjust_day_counter();
+    """)
+
+    # 3. Decrement when a booking is deleted
+    db.execute("""
+        CREATE OR REPLACE FUNCTION dec_day_counter()
+        RETURNS TRIGGER
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            UPDATE room_day_counter
+            SET count = count - 1
+            WHERE room_id = OLD.room_id AND day = OLD.starts_at::date;
+            RETURN OLD;
+        END;
+        $$;
+    """)
+    db.execute("""
+        CREATE TRIGGER bookings_dec_day_counter
+        AFTER DELETE ON bookings
+        FOR EACH ROW
+        EXECUTE FUNCTION dec_day_counter();
+    """)
+
+
+def book(db, room_id: int, starts_at: datetime, ends_at: datetime) -> bool:
+    day = starts_at.date()
+    for _ in range(MAX_ATTEMPTS):
+        try:
+            db.begin(isolation="serializable")
+            sql = "INSERT INTO bookings (room_id, starts_at, ends_at) VALUES (%s, %s, %s)"
+            db.execute(sql, (room_id, starts_at, ends_at))
+            db.commit()
+            return True
+        except psycopg.errors.SerializationFailure:
+            db.rollback()
+            continue
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except (psycopg.errors.UniqueViolation,
+                psycopg.errors.ExclusionViolation,
+                psycopg.errors.CheckViolation):
+            db.rollback()
+            return False
+        except Exception:
+            db.rollback()
+            return False
+    return False
+
+
+def reschedule(db, booking_id: int,
+               new_starts_at: datetime, new_ends_at: datetime) -> bool:
+    for _ in range(MAX_ATTEMPTS):
+        try:
+            db.begin(isolation="serializable")
+            # Lock and verify the booking exists
+            if not db.execute(
+                "SELECT * FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,)
+            ):
+                db.rollback()
+                return False
+            # Attempt to update
+            db.execute(
+                "UPDATE bookings SET starts_at = %s, ends_at = %s WHERE id = %s",
+                (new_starts_at, new_ends_at, booking_id)
+            )
+            db.commit()
+            return True
+        except psycopg.errors.SerializationFailure:
+            db.rollback()
+            continue
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except (psycopg.errors.UniqueViolation,
+                psycopg.errors.ExclusionViolation,
+                psycopg.errors.CheckViolation):
+            db.rollback()
+            return False
+        except Exception:
+            db.rollback()
+            return False
+    return False
+
+
+def cancel(db, booking_id: int) -> bool:
+    for _ in range(MAX_ATTEMPTS):
+        try:
+            db.begin(isolation="serializable")
+            if not db.execute(
+                "SELECT * FROM bookings WHERE id = %s FOR UPDATE",
+                (booking_id,)
+            ):
+                db.rollback()
+                return False
+            db.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            db.commit()
+            return True
+        except psycopg.errors.SerializationFailure:
+            db.rollback()
+            continue
+        except psycopg.errors.DeadlockDetected:
+            db.rollback()
+            continue
+        except (psycopg.errors.UniqueViolation,
+                psycopg.errors.ExclusionViolation,
+                psycopg.errors.CheckViolation):
+            db.rollback()
+            return False
+        except Exception:
+            db.rollback()
+            return False
+    return False
+```

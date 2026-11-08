@@ -1,0 +1,68 @@
+```python
+import psycopg.errors
+
+def transfer(db, from_id: int, to_id: int, amount: int) -> bool:
+    # Lock ordering: always lock the lower account id first to avoid deadlocks.
+    lower_id = from_id if from_id < to_id else to_id
+    higher_id = to_id if from_id < to_id else from_id
+
+    MAX_ATTEMPTS = 10  # each attempt uses at most 6 db calls → ≤ 60 calls total
+
+    for _ in range(MAX_ATTEMPTS):
+        try:
+            db.begin()
+
+            # Acquire locks for both accounts in a deterministic order
+            rows = db.execute(
+                """
+                SELECT id, balance
+                FROM accounts
+                WHERE id = %(lower_id)s OR id = %(higher_id)s
+                ORDER BY id
+                FOR UPDATE
+                """,
+                {"lower_id": lower_id, "higher_id": higher_id}
+            )
+            balances = {row[0]: row[1] for row in rows}
+
+            # If the sender lacks enough funds, abort transaction
+            if balances[from_id] < amount:
+                db.rollback()
+                return False
+
+            # Perform the transfer atomically
+            db.execute(
+                "UPDATE accounts SET balance = balance - %(amt)s WHERE id = %(fid)s",
+                {"amt": amount, "fid": from_id}
+            )
+            db.execute(
+                "UPDATE accounts SET balance = balance + %(amt)s WHERE id = %(tid)s",
+                {"amt": amount, "tid": to_id}
+            )
+
+            db.commit()
+            return True
+
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            # Roll back the failed transaction and retry later
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            continue
+
+        except Exception:
+            # Any other error is unexpected; abort and treat as failure
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return False
+
+    # Exhausted retry attempts – cannot guarantee success
+    return False
+
+def migrate(db) -> None:
+    # No schema migration required; this function exists for completeness.
+    pass
+```

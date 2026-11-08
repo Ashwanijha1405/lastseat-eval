@@ -1,0 +1,55 @@
+import psycopg.errors
+
+def migrate(db):
+    # Ensure idempotency_key is unique to enforce the required constraint
+    db.execute(
+        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_idempotency_key ON payments (idempotency_key);"
+    )
+
+def create_payment(db, idempotency_key: str, customer_id: int, amount: int) -> int:
+    max_attempts = 10
+    for _ in range(max_attempts):
+        db.begin(isolation="serializable")
+        try:
+            # Try to insert the payment only if its idempotency_key is not already present
+            rows = db.execute(
+                """
+                INSERT INTO payments (idempotency_key, customer_id, amount)
+                VALUES (%(idempotency_key)s, %(customer_id)s, %(amount)s)
+                ON CONFLICT (idempotency_key) DO NOTHING
+                RETURNING id
+                """,
+                {
+                    "idempotency_key": idempotency_key,
+                    "customer_id": customer_id,
+                    "amount": amount,
+                }
+            )
+            if rows:
+                db.commit()
+                return rows[0][0]
+            else:
+                # No row was inserted – roll back the empty transaction
+                db.rollback()
+                # Check whether a payment for this key already exists
+                rows2 = db.execute(
+                    "SELECT id FROM payments WHERE idempotency_key = %(idempotency_key)s",
+                    {"idempotency_key": idempotency_key}
+                )
+                if rows2:
+                    return rows2[0][0]
+                # Otherwise, the key is still missing – retry the loop
+                continue
+        except psycopg.errors.SerializationFailure:
+            db.rollback()
+            continue
+        except Exception:
+            db.rollback()
+            continue
+
+    # Fallback – after exhausting attempts, the payment must exist
+    rows = db.execute(
+        "SELECT id FROM payments WHERE idempotency_key = %(idempotency_key)s",
+        {"idempotency_key": idempotency_key}
+    )
+    return rows[0][0]

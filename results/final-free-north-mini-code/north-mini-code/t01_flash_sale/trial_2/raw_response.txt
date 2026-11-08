@@ -1,0 +1,42 @@
+```python
+import psycopg
+
+def migrate(db):
+    # No migration required for the flash‑sale schema.
+    pass
+
+def purchase(db, product_id: int, qty: int) -> bool:
+    db.begin()
+    try:
+        # Lock the product row to serialize purchases for this product.
+        rows = db.execute(
+            "SELECT stock FROM products WHERE id = %(pid)s FOR UPDATE",
+            {"pid": product_id}
+        )
+        if not rows:
+            # Product does not exist (should never happen per problem statement).
+            db.rollback()
+            return False
+
+        stock = rows[0][0]
+
+        if stock >= qty:
+            # Deduct stock and record the order atomically.
+            db.execute(
+                "UPDATE products SET stock = stock - %(qty)s WHERE id = %(pid)s",
+                {"qty": qty, "pid": product_id}
+            )
+            db.execute(
+                "INSERT INTO orders (product_id, qty) VALUES (%(pid)s, %(qty)s)",
+                {"pid": product_id, "qty": qty}
+            )
+            db.commit()
+            return True
+        else:
+            db.rollback()
+            return False
+    except Exception:
+        # Abort any open transaction on error and treat the purchase as failed.
+        db.rollback()
+        return False
+```
