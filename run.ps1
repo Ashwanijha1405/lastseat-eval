@@ -120,5 +120,11 @@ switch ($Command) {
     }
     "psql" { Start-Db; Invoke-Checked @("docker", "compose", "exec", "db", "psql", "-U", "lastseat", "-d", "lastseat") }
     "shell" { Start-Db; Invoke-Eval @("bash") }
+    "zip" {
+        # The zip is exactly the committed tree, so a dirty working tree is refused.
+        if (git status --porcelain) { Write-Output "working tree has uncommitted changes; commit first, the zip is built from HEAD"; exit 1 }
+        Invoke-Checked @("git", "archive", "--format=zip", "-o", "lastseat-eval.zip", "HEAD")
+        Invoke-Eval @("python", "-m", "lastseat.package", "lastseat-eval.zip")
+    }
     default { Write-Output "unknown command '$Command'; try .\run.ps1 help"; exit 2 }
 }

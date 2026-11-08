@@ -1,12 +1,10 @@
 # Everything runs inside Docker. The host needs only Docker and make.
-# Targets for later milestones (report, zip) are added when the code behind
-# them exists.
 
 COMPOSE := docker compose
 EVAL := $(COMPOSE) run --rm eval
 RUN_ARGS = $(if $(CONFIG),--config $(CONFIG)) $(if $(YES),--yes) $(if $(NEW),--new) $(if $(RUN),--run-id $(RUN)) $(if $(FROM),--estimate-from $(FROM)) $(if $(JOBS),--jobs $(JOBS))
 
-.PHONY: help up down build test validate models free-models quota summary dry-run pilot run psql shell
+.PHONY: help up down build test validate models free-models quota summary dry-run pilot run psql shell zip
 
 help:
 	@echo "make up     start Postgres 16.15 and wait until healthy"
@@ -24,6 +22,7 @@ help:
 	@echo "             resumes only an unfinished run with the same tasks, models, trials; else refuses: RUN=<id> or NEW=1"
 	@echo "make psql   open psql on the db container"
 	@echo "make shell  bash inside the eval container"
+	@echo "make zip    lastseat-eval.zip from HEAD (git archive), then checked: < 50 MB, README at root, no .env/keys/caches/videos"
 
 up:
 	$(COMPOSE) up -d --wait db
@@ -66,3 +65,9 @@ psql: up
 
 shell: up
 	$(EVAL) bash
+
+# The zip is exactly the committed tree, so a dirty working tree is refused.
+zip:
+	$(if $(strip $(shell git status --porcelain)),$(error working tree has uncommitted changes; commit first, the zip is built from HEAD))
+	git archive --format=zip -o lastseat-eval.zip HEAD
+	$(EVAL) python -m lastseat.package lastseat-eval.zip
