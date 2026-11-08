@@ -43,14 +43,20 @@ Overselling, double-booking and lost money are what happens when this code is wr
 
 ## 4. Setup & run
 
-Requirements: Docker (with Compose) and `make`, or PowerShell on Windows (`.\run.ps1` has the same commands). Everything runs in containers: `postgres:16.15-bookworm` and `python:3.12.16-slim-bookworm`, all Python packages pinned ([requirements.txt](requirements.txt)).
+Requirements: Docker (with Compose) and `make`, or PowerShell on Windows (`.\run.ps1` has the same commands; if scripts are blocked, `powershell -ExecutionPolicy Bypass -File .\run.ps1 <command>`). Everything runs in containers: `postgres:16.15-bookworm` and `python:3.12.16-slim-bookworm`, all Python packages pinned ([requirements.txt](requirements.txt)).
 
 ```sh
 cp .env.example .env          # API keys only needed for model runs (below)
-make up && make validate      # Windows: .\run.ps1 validate
+make build                    # builds the eval image (a few minutes, once); Windows: .\run.ps1 build
+make up                       # starts Postgres;                              Windows: .\run.ps1 up
+make validate TASK=t01_flash_sale   # one task, about 1 min;  Windows: .\run.ps1 validate -Task t01_flash_sale
+make validate                 # all 10 tasks, about 20 min;                   Windows: .\run.ps1 validate
+make dry-run                  # whole model pipeline with a mock model, no key, $0; Windows: .\run.ps1 dry-run
 ```
 
-`make validate` grades every reference and wrong variant and writes [results/validation.md](results/validation.md); `make test` runs the unit tests.
+Without `make build` first, the first command that needs the image prints `pull access denied for lastseat-eval` and then builds it; that warning is harmless.
+
+`make validate` grades every reference and wrong variant and writes [results/validation.md](results/validation.md) (`TASK=` writes `results/validation_partial.md` instead). It overwrites the committed verdicts in `results/validation/`, so `git diff results/validation` is a reproduction check: if your machine reproduces ours, only the `seconds` fields change. `make dry-run` runs the free model set (2 models × 10 tasks) with a mock model that returns each task's reference, grades all 20 answers (about 6 min) and writes a new `results/<timestamp>-dry/` (gitignored); every cell should pass. A run's `summary.md` is written by `make summary RUN=<run id>` (Windows: `.\run.ps1 summary -Run <run id>`), not by the run itself. `make test` runs the unit tests.
 
 Model runs:
 

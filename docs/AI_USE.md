@@ -816,3 +816,27 @@ Claude drafted:
 Review: whether "serial" should also cover requests that never call the
 database (they are ignored when matching orders); the t03 prose in README
 section 7.
+
+## 2026-11-08: M7 packaging and clean-clone reproduction
+
+Drafted:
+- `make zip` / `.\run.ps1 zip`: refuses a dirty working tree, builds
+  `lastseat-eval.zip` with `git archive HEAD` (only committed files), then
+  `lastseat.package` checks it in the eval container: under 50 MB, README.md
+  at the root, no `.env*` (except `.env.example`), caches or videos, no
+  key-shaped text, and no file containing the value of any
+  KEY/TOKEN/SECRET environment variable (names reported, values never printed).
+  Tests in `tests/test_package.py`.
+- Clean-clone test: fresh clone from GitHub into a new folder, image deleted
+  first so it was rebuilt from the Dockerfile. Followed the README:
+  `make up`, `make validate TASK=t01_flash_sale` and `TASK=t03_expense_budget`
+  (all verdicts as expected; `git diff` showed only the `seconds` fields
+  changed), `make dry-run` (20/20 mock answers pass) and `make summary`.
+- README fixes from that test: `make build` step and the harmless
+  "pull access denied" warning; per-task validate with times; `make dry-run`
+  was not documented; validation overwrites committed verdicts (a `git diff`
+  reproduction check); the run does not write `summary.md`; PowerShell
+  execution-policy hint.
+
+Review: the zip checker's key patterns; whether results/ should all ship in the
+zip (5.9 MB now).
