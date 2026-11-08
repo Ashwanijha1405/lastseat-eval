@@ -73,6 +73,55 @@ def _dates(r: dict) -> str:
     return ", ".join(sorted(days)) or "-"
 
 
+def _route_kind(r: dict) -> str:
+    """API route vs official CLI route: the CLI adds its own system prompt, so the two are reported apart."""
+    meta = r["meta"]
+    if meta.get("source") == "official-cli":
+        return "official CLI (" + ("Claude Code" if meta["cli"].get("name", "claude") == "claude" else "Antigravity") + ")"
+    return "OpenRouter API (free tier)"
+
+
+def _stats(r: dict) -> dict:
+    graded = [v for _, v in r["trials"].values() if v]
+    per_task = {}
+    for (t, _), (_, v) in r["trials"].items():
+        per_task.setdefault(t, []).append(v)
+    cats = {}
+    loads = {}
+    for v in graded:
+        if not v.get("passed"):
+            cats[v.get("failure_category")] = cats.get(v.get("failure_category"), 0) + 1
+            if v.get("failure_category") == "load":
+                loads[v.get("load_error")] = loads.get(v.get("load_error"), 0) + 1
+    return {"graded": len(graded), "cells": len(r["trials"]),
+            "passed": sum(1 for v in graded if v.get("passed")),
+            "mean": sum(v.get("scores", {}).get("total", 0) for v in graded) / len(graded) if graded else 0.0,
+            "pass_k": sum(1 for vs in per_task.values() if all(vs) and all(v.get("passed") for v in vs)),
+            "tasks": len(per_task), "cats": cats, "loads": loads}
+
+
+def overview_section(runs: list[dict]) -> str:
+    out = ["| model | route | trials passed | tasks passed in all 3 trials (pass^3) | mean score | concurrency failures |",
+           "|---|---|---|---|---|---|"]
+    for r in runs:
+        st = _stats(r)
+        out.append(f"| `{r['model']['id']}` | {_route_kind(r)} | {st['passed']}/{st['graded']} | "
+                   f"{st['pass_k']}/{st['tasks']} | {st['mean']:.3f} | {st['cats'].get('concurrency', 0)} |")
+    return "\n".join(out)
+
+
+def categories_section(runs: list[dict]) -> str:
+    out = ["| model | route | failed trials | load | spec | concurrency | harness | load reasons |",
+           "|---|---|---|---|---|---|---|---|"]
+    for r in runs:
+        st = _stats(r)
+        c = st["cats"]
+        reasons = ", ".join(f"`{k}` {n}" for k, n in sorted(st["loads"].items(), key=lambda kv: (-kv[1], kv[0]))) or "-"
+        out.append(f"| `{r['model']['id']}` | {_route_kind(r)} | {st['graded'] - st['passed']} | {c.get('load', 0)} | "
+                   f"{c.get('spec', 0)} | {c.get('concurrency', 0)} | {c.get('harness', 0)} | {reasons} |")
+    return "\n".join(out)
+
+
 def models_section(runs: list[dict]) -> str:
     out = ["| model (exact ID) | route | settings | trials | run dates (UTC) | cells graded | run |",
            "|---|---|---|---|---|---|---|"]
@@ -87,6 +136,13 @@ def models_section(runs: list[dict]) -> str:
 
 
 def results_section(runs: list[dict]) -> str:
+    groups = {}
+    for r in runs:
+        groups.setdefault("official CLI" if r["meta"].get("source") == "official-cli" else "OpenRouter API", []).append(r)
+    return "\n\n".join(f"**{name} route**\n\n" + _results_table(rs) for name, rs in groups.items())
+
+
+def _results_table(runs: list[dict]) -> str:
     tasks = list(dict.fromkeys(t for r in runs for t, _ in r["trials"]))
     out = ["| task | " + " | ".join(f"`{r['model']['id']}`" for r in runs) + " |",
            "|---|" + "---|" * len(runs)]
@@ -275,7 +331,7 @@ def runtime_section(runs: list[dict]) -> str:
     note = ("¹ Times of the first grade, run one solution at a time (each run's grading right after its model "
             "calls; validation with `make validate`). This is the estimate for a reproduction.")
     if regrade or val_latest != val_original:
-        note += (" Every run was later re-graded from disk with 4 grading jobs in parallel, which is slower per "
+        note += (" Some runs were later re-graded from disk with 4 grading jobs in parallel, which is slower per "
                  "solution because the jobs compete for the machine: " + ", ".join(regrade)
                  + f", validation {val_latest / 60:.0f} min. Schedules and scores were identical; they do not depend on timing.")
     out += ["", note]
@@ -284,7 +340,8 @@ def runtime_section(runs: list[dict]) -> str:
 
 def sections() -> dict[str, str]:
     runs = final_runs()
-    return {"models": models_section(runs), "results": results_section(runs),
+    return {"overview": overview_section(runs), "categories": categories_section(runs),
+            "models": models_section(runs), "results": results_section(runs),
             "failures": failures_section(runs), "pilot_concurrency": pilot_concurrency_section(),
             "validation": validation_section(),
             "runtime": runtime_section(runs)}
