@@ -239,27 +239,46 @@ def validation_section() -> str:
     return "\n".join(out)
 
 
+def _original_seconds(verdict_file: Path) -> tuple[float, bool]:
+    """Grading time of the first grade (verdict.prev.json, kept by the first re-grade
+    from disk), and whether that file existed. Re-grades run in parallel, so only
+    the first grade times how long a reproduction takes."""
+    prev = verdict_file.with_name("verdict.prev.json")
+    if prev.exists():
+        return _load(prev).get("seconds", 0), True
+    return _load(verdict_file).get("seconds", 0), False
+
+
 def runtime_section(runs: list[dict]) -> str:
-    out = ["| model | new calls in the final run (reused pilot trials excluded) | model time per answer (median s) | grading time (total s) | "
+    out = ["| model | new calls in the final run (reused pilot trials excluded) | model time per answer (median s) | grading time (total s)¹ | "
            "schedules explored | scenarios not exhaustive | spent (USD) |", "|---|---|---|---|---|---|---|"]
+    regrade = []
     for r in runs:
-        graded = [v for _, v in r["trials"].values() if v]
-        secs = sorted((v.get("api") or {}).get("seconds") or 0 for v in graded)
+        graded = [(d, v) for d, v in r["trials"].values() if v]
+        secs = sorted((v.get("api") or {}).get("seconds") or 0 for _, v in graded)
         med = secs[len(secs) // 2] if secs else 0
-        scs = [s for v in graded for s in v.get("scenarios") or []]
+        scs = [s for _, v in graded for s in v.get("scenarios") or []]
         meta = r["meta"]
         calls = meta.get("api_calls") if meta.get("api_calls") is not None else sum(
             s.get("calls", s.get("api_calls", 0)) for s in meta.get("sessions", []))
-        out.append(f"| `{r['model']['id']}` | {calls} | {med:.0f} | {sum(v.get('seconds', 0) for v in graded):.0f} | "
+        original = sum(_original_seconds(d / "verdict.json")[0] for d, _ in graded)
+        if any(v.get("regraded_from_disk") for _, v in graded):
+            regrade.append(f"`{r['model']['id']}` {sum(v.get('seconds', 0) for _, v in graded):.0f} s")
+        out.append(f"| `{r['model']['id']}` | {calls} | {med:.0f} | {original:.0f} | "
                    f"{sum(s['schedules'] for s in scs)} | {sum(1 for s in scs if not s.get('exhaustive'))} of {len(scs)} | "
                    f"{meta.get('spent_usd', 0):.2f} |")
-    if any(v.get("regraded_from_disk") for r in runs for _, v in r["trials"].values() if v):
-        out += ["", "Grading times are from the latest re-grade from disk (every run, 4 grading jobs at a time on "
-                "one machine), so they include contention between jobs; schedules and scores do not depend on timing."]
-    vs = [_load(p) for p in RESULTS.glob("validation/*/*/verdict.json") if not p.parent.name.startswith("alt_")]
-    out += ["", f"Grader validation (`make validate`, {len(vs)} solutions): "
-            f"{sum(v.get('seconds', 0) for v in vs) / 60:.0f} min of grading time on the machine that produced these results "
-            f"(sum of per-solution times; Docker Desktop on Windows 11)."]
+    files = [p for p in RESULTS.glob("validation/*/*/verdict.json") if not p.parent.name.startswith("alt_")]
+    val_original = sum(_original_seconds(p)[0] for p in files)
+    val_latest = sum(_load(p).get("seconds", 0) for p in files)
+    out += ["", f"Grader validation (`make validate`, {len(files)} solutions): {val_original / 60:.0f} min of grading "
+            "time¹ on the machine that produced these results (sum of per-solution times; Docker Desktop on Windows 11)."]
+    note = ("¹ Times of the first grade, run one solution at a time (each run's grading right after its model "
+            "calls; validation with `make validate`). This is the estimate for a reproduction.")
+    if regrade or val_latest != val_original:
+        note += (" Every run was later re-graded from disk with 4 grading jobs in parallel, which is slower per "
+                 "solution because the jobs compete for the machine: " + ", ".join(regrade)
+                 + f", validation {val_latest / 60:.0f} min. Schedules and scores were identical; they do not depend on timing.")
+    out += ["", note]
     return "\n".join(out)
 
 

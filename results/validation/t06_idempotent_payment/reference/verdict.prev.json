@@ -1,0 +1,99 @@
+{
+  "task_id": "t06_idempotent_payment",
+  "solution": "/app/tasks/t06_idempotent_payment/reference.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "new key creates a payment and returns its id",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: new key creates a payment and returns its id\ncall: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 1 [(1,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned 1\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 1 AND bool_and(id = %(r1)s::bigint AND idempotency_key = 'order-1001'\n                                 AND customer_id = 7 AND amount = 2500)\nFROM payments\n\n"
+    },
+    {
+      "name": "existing key returns the existing payment and inserts nothing",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: existing key returns the existing payment and inserts nothing\ncall: create_payment(db, idempotency_key='order-1001', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1001', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 0 []\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\nstep 3   R1  SELECT id FROM payments WHERE idempotency_key = 'order-1001'   [autocommit] -> [(2,)]\nstep 4   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned 2\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1001') = %(r1)s::bigint FROM payments\n\n"
+    },
+    {
+      "name": "a different key creates a separate payment",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: a different key creates a separate payment\ncall: create_payment(db, idempotency_key='order-1002', customer_id=7, amount=2500)\nschedule choices: []\nstep 1   R1  INSERT INTO payments (idempotency_key, customer_id, amount) VALUES ('order-1002', 7, 2500) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id   [autocommit] -> INSERT 0 1 [(2,)]\nstep 2   R1  COMMIT   [autocommit] -> COMMIT\n         R1  returned 2\ninvariant ok: at most one payment per idempotency key\ninvariant ok: expected state: SELECT count(*) = 2 AND (SELECT id FROM payments WHERE idempotency_key = 'order-1002') = %(r1)s::bigint FROM payments\n\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two attempts with the same key, only one payment may exist",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 4,
+      "dfs_schedules": 4,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.15,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two attempts with the same key both get the payment id",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 4,
+      "dfs_schedules": 4,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.14,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two different keys at the same moment",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 6,
+      "dfs_schedules": 6,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": true,
+      "live": true,
+      "unsafe_schedules": 0,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [],
+      "seconds": 0.2,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.5,
+    "solo": 0.25,
+    "liveness": 0.25,
+    "total": 1.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": true,
+  "reproducible": true,
+  "seconds": 0.72,
+  "failure_category": null
+}

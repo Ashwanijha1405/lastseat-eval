@@ -18,3 +18,11 @@ def test_sections_come_from_the_results_directory():
     s = report.sections()
     assert set(s) == {"models", "results", "failures", "pilot_concurrency", "validation", "runtime"}
     assert "behave as expected" in s["validation"]
+
+
+def test_grading_time_is_the_first_grade_not_a_later_regrade(tmp_path):
+    v = tmp_path / "verdict.json"
+    v.write_text('{"seconds": 90, "regraded_from_disk": true}', encoding="utf-8")
+    assert report._original_seconds(v) == (90, False)
+    (tmp_path / "verdict.prev.json").write_text('{"seconds": 60}', encoding="utf-8")
+    assert report._original_seconds(v) == (60, True)

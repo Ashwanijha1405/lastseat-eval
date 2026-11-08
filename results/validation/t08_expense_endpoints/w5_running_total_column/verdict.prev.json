@@ -1,0 +1,22 @@
+{
+  "task_id": "t08_expense_endpoints",
+  "solution": "/app/tasks/t08_expense_endpoints/wrong/w5_running_total_column.py",
+  "status": "load_error",
+  "load_error": "forbidden_migrate",
+  "load_detail": "this task fixes the schema; the module must not define migrate()",
+  "harness_detail": null,
+  "solo": [],
+  "scenarios": [],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.0,
+    "liveness": 0.0,
+    "total": 0.0
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 0.0,
+  "failure_category": "load"
+}

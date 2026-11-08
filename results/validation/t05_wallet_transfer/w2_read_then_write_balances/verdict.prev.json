@@ -1,0 +1,113 @@
+{
+  "task_id": "t05_wallet_transfer",
+  "solution": "/app/tasks/t05_wallet_transfer/wrong/w2_read_then_write_balances.py",
+  "status": "graded",
+  "load_error": null,
+  "load_detail": null,
+  "harness_detail": null,
+  "solo": [
+    {
+      "name": "transfer within balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer within balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(10,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 40 WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{70,40}' FROM accounts\n"
+    },
+    {
+      "name": "transfer of the whole balance succeeds",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer of the whole balance succeeds\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(30,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 0 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 30 WHERE id = 2 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{0,30}' FROM accounts\n"
+    },
+    {
+      "name": "transfer over balance is refused cleanly",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer over balance is refused cleanly\ncall: transfer(db, from_id=1, to_id=2, amount=30)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(29,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  ROLLBACK -> ROLLBACK\n         R1  returned False\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{29,0}' FROM accounts\n"
+    },
+    {
+      "name": "transfer to a lower id works",
+      "passed": true,
+      "reason": "",
+      "trace": "solo check: transfer to a lower id works\ncall: transfer(db, from_id=2, to_id=1, amount=50)\nschedule choices: []\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 2 -> [(50,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 1 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 0 WHERE id = 2 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 50 WHERE id = 1 -> UPDATE 1\nstep 6   R1  COMMIT -> COMMIT\n         R1  returned True\ninvariant ok: no balance below zero\ninvariant ok: expected state: SELECT array_agg(balance ORDER BY id) = '{50,0,5}' FROM accounts\n"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "two transfers out of one account, only one fits",
+      "must_all_succeed": false,
+      "status": "ok",
+      "schedules": 350,
+      "dfs_schedules": 350,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": true,
+      "unsafe_schedules": 336,
+      "unlive_schedules": 0,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two transfers out of one account, only one fits\nR1: transfer(db, from_id=1, to_id=2, amount=40)\nR2: transfer(db, from_id=1, to_id=3, amount=40)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 40 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(50,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  SELECT balance FROM accounts WHERE id = 3 -> [(0,)]\nstep 10  R2  UPDATE accounts SET balance = 10 WHERE id = 1 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 40 WHERE id = 3 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\nINVARIANT VIOLATED: money is conserved (total 50)  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 18.91,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "opposite transfers between two accounts",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 420,
+      "dfs_schedules": 420,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": false,
+      "unsafe_schedules": 42,
+      "unlive_schedules": 406,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 130 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  SELECT balance FROM accounts WHERE id = 1 -> [(70,)]\nstep 10  R2  UPDATE accounts SET balance = 80 WHERE id = 2 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 90 WHERE id = 1 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\nINVARIANT VIOLATED: money is conserved (total 200)  (got [(False,)])\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nreproduced on re-run: True\n",
+        "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 130 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 8   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 9   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 10  R2  UPDATE accounts SET balance = 80 WHERE id = 2 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 120 WHERE id = 1 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nreproduced on re-run: True\n",
+        "scenario: opposite transfers between two accounts\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=2, to_id=1, amount=20)\nschedule choices: [0, 0, 0, 0, 1, 1, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 6   R2  SELECT balance FROM accounts WHERE id = 2 -> [(100,)]\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 8   R2  UPDATE accounts SET balance = 80 WHERE id = 2 -> UPDATE 1\nstep 9   R1  UPDATE accounts SET balance = 130 WHERE id = 2 -> blocked (waiting for R2)\nstep 10  R2  UPDATE accounts SET balance = 120 WHERE id = 1 -> UPDATE 1\n         R1  step 9 resumed -> ERROR 40P01 DeadlockDetected: deadlock detected\n         R1  function ended inside an open transaction; harness rolled it back\n         R1  raised DeadlockDetected (40P01): deadlock detected\nstep 11  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\ninvariant ok: money is conserved (total 200)\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nwarning: R1: function ended inside an open transaction; harness rolled it back\nreproduced on re-run: True\n"
+      ],
+      "seconds": 38.19,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    },
+    {
+      "name": "two transfers out of one account, both fit",
+      "must_all_succeed": true,
+      "status": "ok",
+      "schedules": 350,
+      "dfs_schedules": 350,
+      "exhaustive": true,
+      "random_seed": null,
+      "safe": false,
+      "live": false,
+      "unsafe_schedules": 336,
+      "unlive_schedules": 336,
+      "all_reproduced": true,
+      "counterexamples": [
+        "scenario: two transfers out of one account, both fit\nR1: transfer(db, from_id=1, to_id=2, amount=30)\nR2: transfer(db, from_id=1, to_id=3, amount=30)\nschedule choices: [0, 0, 0, 0, 0, 1, 1, 0]\nstep 1   R1  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 2   R1  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 3   R1  SELECT balance FROM accounts WHERE id = 2 -> [(0,)]\nstep 4   R1  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 5   R1  UPDATE accounts SET balance = 30 WHERE id = 2 -> UPDATE 1\nstep 6   R2  BEGIN ISOLATION LEVEL READ COMMITTED -> BEGIN\nstep 7   R2  SELECT balance FROM accounts WHERE id = 1 -> [(100,)]\nstep 8   R1  COMMIT -> COMMIT\n         R1  returned True\nstep 9   R2  SELECT balance FROM accounts WHERE id = 3 -> [(0,)]\nstep 10  R2  UPDATE accounts SET balance = 70 WHERE id = 1 -> UPDATE 1\nstep 11  R2  UPDATE accounts SET balance = 30 WHERE id = 3 -> UPDATE 1\nstep 12  R2  COMMIT -> COMMIT\n         R2  returned True\ninvariant ok: no balance below zero\nINVARIANT VIOLATED: money is conserved (total 100)  (got [(False,)])\nSUCCESS CHECK FAILED: both transfers applied  (got [(False,)])\nreproduced on re-run: True\n"
+      ],
+      "seconds": 24.76,
+      "must_not_block": false,
+      "blocked_schedules": 0,
+      "liveness_reason": null
+    }
+  ],
+  "scores": {
+    "safety": 0.0,
+    "solo": 0.25,
+    "liveness": 0.0,
+    "total": 0.25
+  },
+  "safety_reason": null,
+  "liveness_reason": null,
+  "passed": false,
+  "reproducible": true,
+  "seconds": 82.11,
+  "failure_category": "concurrency"
+}
